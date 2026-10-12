@@ -89,7 +89,7 @@
     <div class="stats">
       <div class="stat"><div class="k">Registered</div><div class="v" id="stReg">0</div></div>
       <div class="stat"><div class="k">Not yet</div><div class="v" id="stNot">0</div></div>
-      <div class="stat"><div class="k">Total participants</div><div class="v" id="stTotal">0</div></div>
+      <div class="stat"><div class="k">Total participants</div><div class="v" id="stTotal">0</div><div class="muted" style="font-size:12px" id="stWalk"></div></div>
       <div class="stat"><div class="k">Attendance</div><div class="v" id="stPct">0%</div><div class="bar big"><i id="stBar" style="width:0"></i></div></div>
     </div>
     <div class="grid2">
@@ -118,6 +118,7 @@
           <option value="all">All</option>
           <option value="yes">Registered</option>
           <option value="no">Not registered</option>
+          <option value="walkin">Walk-in only</option>
         </select>
         <button class="btn ghost small" id="reloadParts" type="button">↻ Reload</button>
         <button class="btn ghost small" id="exportParts" type="button">⬇ Export CSV</button>
@@ -166,6 +167,7 @@
           <select id="setLang"><option value="ms">Bahasa Melayu</option><option value="en">English</option></select>
         </label>
         <label class="check"><input type="checkbox" id="setOpen"> Registration is open</label>
+        <label class="check"><input type="checkbox" id="setWalkIn"> Allow walk-in registration (staff not in the list)</label>
         <button class="btn" id="saveEventBtn" type="button">Save</button>
       </div>
 
@@ -184,6 +186,17 @@
             <p class="muted" style="font-size:12px;margin-top:12px">For a shared tablet at the door, use the <a id="kioskLink" target="_blank">kiosk link</a>: it returns to the form after each person.</p>
           </div>
         </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="section-title">Departments</div>
+      <div class="section-sub">Shown in the dropdown when a walk-in registers. One department per line.
+        <span id="deptSource"></span></div>
+      <textarea id="deptText" placeholder="Fakulti Sains Komputer dan Matematik&#10;Pejabat Pendaftar&#10;Bendahari"></textarea>
+      <div class="row" style="margin-top:10px">
+        <button class="btn" id="saveDeptBtn" type="button">Save departments</button>
+        <span class="muted" style="font-size:13px" id="deptCount"></span>
       </div>
     </div>
 
@@ -286,6 +299,7 @@ function renderOverview(d) {
   document.getElementById('stReg').textContent = reg;
   document.getElementById('stNot').textContent = total - reg;
   document.getElementById('stTotal').textContent = total;
+  document.getElementById('stWalk').textContent = d.stats.walkIns ? 'incl. ' + d.stats.walkIns + ' walk-in' : '';
   document.getElementById('stPct').textContent = pct + '%';
   document.getElementById('stBar').style.width = pct + '%';
   document.getElementById('updated').textContent = 'Updated ' + d.serverTime;
@@ -299,7 +313,7 @@ function renderOverview(d) {
   document.getElementById('recentList').innerHTML = d.recent.length ? d.recent.map(function (r) {
     return '<li><div class="who"><div><b class="mono">' + App.esc(r.staffId) + '</b> · ' + App.esc(r.name) + '</div>' +
       '<div>' + App.esc(r.department) + '</div></div><div class="t">' + App.esc(r.time) +
-      (r.method === 'Manual' ? '<br>manual' : '') + '</div></li>';
+      (r.method === 'Manual' ? '<br>manual' : r.method === 'Walk-in' ? '<br>walk-in' : '') + '</div></li>';
   }).join('') : '<p class="muted">No registrations yet.</p>';
 }
 
@@ -346,6 +360,7 @@ function filteredParticipants() {
   return (state.participants || []).filter(function (p) {
     if (f === 'yes' && !p.registered) return false;
     if (f === 'no' && p.registered) return false;
+    if (f === 'walkin' && p.method !== 'Walk-in') return false;
     if (!q) return true;
     return (p.staffId + ' ' + p.name + ' ' + p.department).toLowerCase().indexOf(q) >= 0;
   });
@@ -361,7 +376,7 @@ function renderParticipants() {
   document.getElementById('partBody').innerHTML = list.slice(0, MAX_ROWS).map(function (p) {
     return '<tr><td class="mono">' + App.esc(p.staffId) + '</td><td>' + App.esc(p.name) + '</td><td>' + App.esc(p.department) + '</td>' +
       '<td>' + (p.registered ? '<span class="pill green">Registered</span>' : '<span class="pill grey">Not yet</span>') + '</td>' +
-      '<td class="muted" style="font-size:12px;white-space:nowrap">' + fmtTime(p.registeredAt) + (p.method === 'Manual' ? ' · manual' : '') + '</td>' +
+      '<td class="muted" style="font-size:12px;white-space:nowrap">' + fmtTime(p.registeredAt) + (p.method === 'Manual' ? ' · manual' : p.method === 'Walk-in' ? ' · <span class="pill gold">Walk-in</span>' : '') + '</td>' +
       '<td style="text-align:right">' + (p.registered
         ? '<button class="btn ghost small" data-act="unregister" data-id="' + App.esc(p.staffId) + '">Undo</button>'
         : '<button class="btn small" data-act="manualRegister" data-id="' + App.esc(p.staffId) + '">Register</button>') +
@@ -449,6 +464,8 @@ function fillSetup() {
   document.getElementById('setDate').value = ev.date;
   document.getElementById('setLang').value = ev.announceLang;
   document.getElementById('setOpen').checked = ev.registrationOpen;
+  document.getElementById('setWalkIn').checked = ev.allowWalkIn;
+  fillDepartments(state.dash.departmentList);
 }
 
 document.getElementById('saveEventBtn').addEventListener('click', function () {
@@ -456,13 +473,36 @@ document.getElementById('saveEventBtn').addEventListener('click', function () {
     eventName: document.getElementById('setName').value,
     eventDate: document.getElementById('setDate').value,
     announceLang: document.getElementById('setLang').value,
-    registrationOpen: document.getElementById('setOpen').checked
+    registrationOpen: document.getElementById('setOpen').checked,
+    allowWalkIn: document.getElementById('setWalkIn').checked
   })).then(function (res) {
     if (!res.success) { App.toast(res.message, 'error'); return; }
     state.dash.event = res.event;
     renderHeader(res.event);
     makeQr();
     App.toast('Event details saved.', 'ok');
+  });
+});
+
+// ── Setup: departments ───────────────────────────────────────
+function fillDepartments(dl) {
+  if (!dl) return;
+  var fromList = dl.source === 'list';
+  document.getElementById('deptText').value = fromList ? dl.list.join('\n') : '';
+  document.getElementById('deptSource').textContent = fromList ? '' :
+    'Not set yet, so the walk-in form uses the ' + dl.list.length + ' departments found in the participant list.';
+  document.getElementById('deptCount').textContent = fromList ? dl.list.length + ' departments' : '';
+}
+
+document.getElementById('saveDeptBtn').addEventListener('click', function () {
+  var list = document.getElementById('deptText').value.split('\n')
+    .map(function (d) { return d.trim(); }).filter(Boolean);
+  withButton(this, call('saveDepartments', { departments: list })).then(function (res) {
+    if (!res.success) { App.toast(res.message, 'error'); return; }
+    if (state.dash) state.dash.departmentList = res.departmentList;
+    fillDepartments(res.departmentList);
+    var n = res.departmentList.source === 'list' ? res.departmentList.list.length : 0;
+    App.toast(n ? n + ' departments saved.' : 'Department list cleared.', 'ok');
   });
 });
 

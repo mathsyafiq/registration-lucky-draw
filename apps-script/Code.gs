@@ -7,18 +7,21 @@
 const SHEETS = {
   settings:     "Settings",
   participants: "Participants",
-  winners:      "Winners"
+  winners:      "Winners",
+  departments:  "Departments"
 };
 
 const HEADERS = {
   Settings:     ["Key", "Value", "Notes"],
   Participants: ["Staff ID", "Name", "Department", "Status", "Registered At", "Method"],
-  Winners:      ["Draw No", "Staff ID", "Name", "Department", "Drawn At", "Status"]
+  Winners:      ["Draw No", "Staff ID", "Name", "Department", "Drawn At", "Status"],
+  Departments:  ["Department"]
 };
 
 const REGISTERED = "Registered";
 const WON = "WON";
 const VOID = "VOID";
+const WALK_IN = "Walk-in";
 
 // ── JSON helper ──────────────────────────────────────────────
 function json(obj) {
@@ -55,7 +58,8 @@ function doPost(e) {
 
 // Actions anyone can call
 const PUBLIC_ACTIONS = {
-  register: function (b) { return registerParticipant(b.staffId, "QR"); }
+  register:    function (b) { return registerParticipant(b.staffId, "QR"); },
+  registerNew: function (b) { return registerNew(b); }
 };
 
 // Actions that need the admin PIN
@@ -67,6 +71,7 @@ const ADMIN_ACTIONS = {
   manualRegister:     function (b) { return registerParticipant(b.staffId, "Manual"); },
   unregister:         function (b) { return unregister(b.staffId); },
   saveSettings:       function (b) { return saveSettings(b); },
+  saveDepartments:    function (b) { return saveDepartments(b.departments); },
   newEvent:           function (b) { return newEvent(b); },
   drawState:          function ()  { return getDrawState(); },
   setDrawCount:       function (b) { return setDrawCount(b.count); },
@@ -110,7 +115,8 @@ function defaultSettings() {
     ["AdminPin",         randomPin(),           "PIN for Admin and Lucky Draw pages. Change it!"],
     ["RegistrationOpen", "TRUE",                "TRUE or FALSE"],
     ["DrawCount",        "10",                  "Number of lucky draw prizes"],
-    ["AnnounceLang",     "ms",                  "ms = Bahasa Melayu, en = English"]
+    ["AnnounceLang",     "ms",                  "ms = Bahasa Melayu, en = English"],
+    ["AllowWalkIn",      "TRUE",                "Staff not in the list may register themselves (TRUE/FALSE)"]
   ];
 }
 
@@ -158,12 +164,19 @@ function isTrue(v) {
   return String(v).trim().toUpperCase() === "TRUE";
 }
 
+// On unless explicitly FALSE (older sheets don't have this setting yet)
+function walkInAllowed(s) {
+  return String(s.AllowWalkIn || "").trim().toUpperCase() !== "FALSE";
+}
+
 function getPublicEvent() {
   const s = getSettingsMap();
   return {
     name: s.EventName || "",
     date: s.EventDate || "",
-    registrationOpen: isTrue(s.RegistrationOpen)
+    registrationOpen: isTrue(s.RegistrationOpen),
+    allowWalkIn: walkInAllowed(s),
+    departments: getDepartmentList().list
   };
 }
 
@@ -174,7 +187,8 @@ function getEvent() {
     date: s.EventDate || "",
     registrationOpen: isTrue(s.RegistrationOpen),
     drawCount: Number(s.DrawCount) || 0,
-    announceLang: s.AnnounceLang || "ms"
+    announceLang: s.AnnounceLang || "ms",
+    allowWalkIn: walkInAllowed(s)
   };
 }
 
@@ -183,6 +197,7 @@ function saveSettings(b) {
   if (b.eventDate !== undefined) setSetting("EventDate", String(b.eventDate).trim().slice(0, 60));
   if (b.registrationOpen !== undefined) setSetting("RegistrationOpen", b.registrationOpen ? "TRUE" : "FALSE");
   if (b.announceLang !== undefined) setSetting("AnnounceLang", b.announceLang === "en" ? "en" : "ms");
+  if (b.allowWalkIn !== undefined) setSetting("AllowWalkIn", b.allowWalkIn ? "TRUE" : "FALSE");
   if (b.newPin !== undefined && b.newPin !== "") {
     const pin = String(b.newPin).trim();
     if (pin.length < 4) return { success: false, message: "PIN must be at least 4 characters." };
@@ -284,6 +299,98 @@ function unregister(staffId) {
   return { success: true };
 }
 
+// Walk-in: staff whose ID is not in the imported list register themselves.
+function registerNew(b) {
+  const id = String(b.staffId || "").trim().slice(0, 40);
+  const key = idKey(id);
+  const name = String(b.name || "").trim().replace(/\s+/g, " ").slice(0, 150);
+  const dept = String(b.department || "").trim().slice(0, 150);
+  if (!key) return { success: false, message: "Please enter your Staff ID." };
+  if (!name) return { success: false, message: "Please enter your full name." };
+  if (!dept) return { success: false, message: "Please choose your department." };
+
+  const s = getSettingsMap();
+  if (!isTrue(s.RegistrationOpen)) return { success: false, closed: true, message: "Registration is closed." };
+  if (!walkInAllowed(s)) {
+    return { success: false, message: "Only staff on the participant list can register. Please see the registration counter." };
+  }
+  const depts = getDepartmentList();
+  if (depts.list.length && depts.list.indexOf(dept) === -1) {
+    return { success: false, message: "Please choose a department from the list." };
+  }
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(15000)) return { success: false, message: "System is busy. Please try again." };
+  try {
+    // Already on the list (e.g. typo the first time) → normal registration
+    if (readParticipants().some(function (p) { return idKey(p.staffId) === key; })) {
+      return registerParticipant(id, "QR");
+    }
+    const now = new Date();
+    const sheet = getSheet(SHEETS.participants);
+    const row = sheet.getLastRow() + 1;
+    sheet.getRange(row, 1).setNumberFormat("@");
+    sheet.getRange(row, 1, 1, 6).setValues([[id, name, dept, REGISTERED, now, WALK_IN]]);
+    return {
+      success: true,
+      already: false,
+      walkIn: true,
+      participant: { staffId: id, name: name, department: dept },
+      registeredAt: formatTime(now)
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ── Departments for the walk-in form ─────────────────────────
+// Uses the Departments tab; if that is empty, the departments
+// found in the participant list.
+function getDepartmentList() {
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get("departments");
+  if (cached) return JSON.parse(cached);
+
+  const seen = {};
+  let list = [], source = "list";
+  const sheet = getSheet(SHEETS.departments);
+  const last = sheet.getLastRow();
+  if (last >= 2) {
+    sheet.getRange(2, 1, last - 1, 1).getValues().forEach(function (r) {
+      const d = String(r[0]).trim();
+      if (d && !seen[d]) { seen[d] = true; list.push(d); }
+    });
+  }
+  if (!list.length) {
+    source = "participants";
+    readParticipants().forEach(function (p) {
+      if (p.department && !seen[p.department]) { seen[p.department] = true; list.push(p.department); }
+    });
+    list.sort(function (a, b) { return a.localeCompare(b); });
+  }
+  const out = { list: list, source: source };
+  cache.put("departments", JSON.stringify(out), 60);
+  return out;
+}
+
+function saveDepartments(departments) {
+  if (!Array.isArray(departments)) return { success: false, message: "Invalid list." };
+  const seen = {};
+  const rows = [];
+  departments.forEach(function (d) {
+    d = String(d || "").trim().slice(0, 150);
+    if (d && !seen[d]) { seen[d] = true; rows.push([d]); }
+  });
+  if (rows.length > 2000) return { success: false, message: "Too many departments (max 2,000)." };
+
+  const sheet = getSheet(SHEETS.departments);
+  const last = sheet.getLastRow();
+  if (last >= 2) sheet.getRange(2, 1, last - 1, 1).clearContent();
+  if (rows.length) sheet.getRange(2, 1, rows.length, 1).setValues(rows);
+  CacheService.getScriptCache().remove("departments");
+  return { success: true, departmentList: getDepartmentList() };
+}
+
 // rows: [[staffId, name, department], ...]   mode: "replace" | "append"
 function importParticipants(rows, mode) {
   if (!Array.isArray(rows) || rows.length === 0) return { success: false, message: "No rows to import." };
@@ -322,6 +429,7 @@ function importParticipants(rows, mode) {
       sheet.getRange(start, 1, out.length, 1).setNumberFormat("@");
       sheet.getRange(start, 1, out.length, 6).setValues(out);
     }
+    CacheService.getScriptCache().remove("departments");
     return {
       success: true,
       imported: out.length,
@@ -363,6 +471,7 @@ function newEvent(b) {
     if (b.eventName) setSetting("EventName", String(b.eventName).trim().slice(0, 150));
     setSetting("EventDate", String(b.eventDate || "").trim().slice(0, 60));
     setSetting("RegistrationOpen", "TRUE");
+    CacheService.getScriptCache().remove("departments");
     return { success: true, event: getEvent() };
   } finally {
     lock.releaseLock();
@@ -379,8 +488,9 @@ function uniqueSheetName(ss, base) {
 function getDashboard() {
   const ps = readParticipants();
   const depts = {};
-  let registered = 0;
+  let registered = 0, walkIns = 0;
   ps.forEach(function (p) {
+    if (p.method === WALK_IN) walkIns++;
     const d = p.department || "(No department)";
     if (!depts[d]) depts[d] = { name: d, total: 0, registered: 0 };
     depts[d].total++;
@@ -398,7 +508,8 @@ function getDashboard() {
   return {
     success: true,
     event: getEvent(),
-    stats: { total: ps.length, registered: registered },
+    stats: { total: ps.length, registered: registered, walkIns: walkIns },
+    departmentList: getDepartmentList(),
     departments: Object.keys(depts).map(function (k) { return depts[k]; })
       .sort(function (a, b) { return b.total - a.total; }),
     recent: recent,
@@ -564,6 +675,7 @@ function initialize() {
   getSheet(SHEETS.settings);
   getSheet(SHEETS.participants);
   getSheet(SHEETS.winners);
+  getSheet(SHEETS.departments);
   CacheService.getScriptCache().remove("settings");
   Logger.log("Sheets ready. Admin PIN: " + getSetting("AdminPin") + "  (change it in the Settings tab or the Admin page)");
 }

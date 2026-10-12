@@ -29,6 +29,13 @@
   .closed { text-align: center; padding: 10px 0; }
   .closed h2 { font-family: var(--display); font-size: 22px; margin-bottom: 6px; }
   .countdown { font-size: 12px; color: var(--muted); margin-top: 10px; }
+  .result .walkin-btn { margin-top: 22px; }
+  .result .walkin-btn + .btn { margin-top: 10px; }
+  .wi-head { font-family: var(--display); font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+  .wi-sub { color: var(--muted); font-size: 14px; margin-bottom: 18px; }
+  .wi-error { color: var(--red); font-size: 14px; min-height: 20px; margin-bottom: 8px; }
+  #wiId { text-transform: uppercase; font-weight: 700; letter-spacing: 2px; }
+  #walkInPanel .btn + .btn { margin-top: 10px; }
 </style>
 </head>
 <body>
@@ -51,6 +58,26 @@
 
   <div class="panel hidden" id="resultPanel"></div>
 
+  <div class="panel hidden" id="walkInPanel">
+    <form id="walkInForm" autocomplete="off">
+      <div class="wi-head">Register as a new participant</div>
+      <div class="wi-sub">Your Staff ID is not in the participant list. Fill in your details to register.</div>
+      <label class="field"><span>Staff ID</span>
+        <input type="text" id="wiId" maxlength="40" autocapitalize="characters" autocorrect="off" spellcheck="false" required>
+      </label>
+      <label class="field"><span>Full name</span>
+        <input type="text" id="wiName" maxlength="150" autocapitalize="words" required>
+      </label>
+      <label class="field"><span>Department</span>
+        <select id="wiDeptSelect"></select>
+        <input type="text" id="wiDeptText" maxlength="150" class="hidden" placeholder="Your department">
+      </label>
+      <div class="wi-error" id="wiError"></div>
+      <button class="btn gold block big" id="wiSubmit" type="submit">Register</button>
+      <button class="btn ghost block" type="button" onclick="resetForm()">Back</button>
+    </form>
+  </div>
+
   <div class="panel hidden" id="closedPanel">
     <div class="closed">
       <h2>Registration is closed</h2>
@@ -69,11 +96,14 @@
   var formPanel = document.getElementById('formPanel');
   var resultPanel = document.getElementById('resultPanel');
   var kioskTimer;
+  var eventInfo = { allowWalkIn: true, departments: [] };
+  var walkInPanel = document.getElementById('walkInPanel');
 
   function loadEvent() {
     if (!App.isConfigured()) { App.toast('API URL not set. Edit docs/assets/app.js.', 'error'); return; }
     App.get({ action: 'info' }).then(function (res) {
       if (!res.success) return;
+      eventInfo = res.event;
       document.getElementById('eventName').textContent = res.event.name || 'Registration';
       document.getElementById('eventDate').textContent = res.event.date || '';
       document.title = 'Register · ' + (res.event.name || 'Event');
@@ -88,6 +118,7 @@
     e.preventDefault();
     var id = input.value.trim();
     if (!id) return;
+    lastId = id;
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span> Registering…';
     App.post({ action: 'register', staffId: id }).then(showResult).catch(function () {
@@ -112,6 +143,10 @@
     } else if (res.closed) {
       html = '<div class="result err"><div class="mark">✕</div><h2>Registration is closed</h2>' +
         '<p class="msg">Please see the registration counter.</p>';
+    } else if (res.notFound && eventInfo.allowWalkIn !== false) {
+      html = '<div class="result err"><div class="mark">?</div><h2>Staff ID not found</h2>' +
+        '<p class="msg">' + App.esc(lastId) + ' is not in the participant list. Check the number, or register as a new participant.</p>' +
+        '<button class="btn gold block walkin-btn" type="button" onclick="showWalkIn()">Register as a new participant</button>';
     } else {
       html = '<div class="result err"><div class="mark">✕</div><h2>Not registered</h2>' +
         '<p class="msg">' + App.esc(res.message || 'Something went wrong.') + '</p>';
@@ -125,7 +160,7 @@
     resultPanel.classList.remove('hidden');
     if (KIOSK) {
       clearTimeout(kioskTimer);
-      kioskTimer = setTimeout(resetForm, res.success ? 5000 : 8000);
+      kioskTimer = setTimeout(resetForm, res.success ? 5000 : res.notFound ? 30000 : 8000);
     }
   }
 
@@ -140,9 +175,66 @@
     clearTimeout(kioskTimer);
     input.value = '';
     resultPanel.classList.add('hidden');
+    walkInPanel.classList.add('hidden');
     formPanel.classList.remove('hidden');
     input.focus();
   }
+
+  // ── Walk-in: staff not in the imported list ──────────────
+  var lastId = '';
+  var deptSelect = document.getElementById('wiDeptSelect');
+  var deptText = document.getElementById('wiDeptText');
+
+  function showWalkIn() {
+    clearTimeout(kioskTimer);
+    var depts = eventInfo.departments || [];
+    var useList = depts.length > 0;
+    deptSelect.classList.toggle('hidden', !useList);
+    deptText.classList.toggle('hidden', useList);
+    deptSelect.required = useList;
+    deptText.required = !useList;
+    deptSelect.innerHTML = '<option value="">Choose your department…</option>' + depts.map(function (d) {
+      return '<option>' + App.esc(d) + '</option>';
+    }).join('');
+    document.getElementById('wiId').value = lastId;
+    document.getElementById('wiName').value = '';
+    deptText.value = '';
+    document.getElementById('wiError').textContent = '';
+    resultPanel.classList.add('hidden');
+    walkInPanel.classList.remove('hidden');
+    document.getElementById('wiName').focus();
+    if (KIOSK) kioskTimer = setTimeout(resetForm, 180000);
+  }
+
+  document.getElementById('walkInForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var useList = !deptSelect.classList.contains('hidden');
+    var body = {
+      action: 'registerNew',
+      staffId: document.getElementById('wiId').value.trim(),
+      name: document.getElementById('wiName').value.trim(),
+      department: (useList ? deptSelect.value : deptText.value).trim()
+    };
+    var err = document.getElementById('wiError');
+    var btn = document.getElementById('wiSubmit');
+    if (!body.staffId || !body.name || !body.department) { err.textContent = 'Please fill in all fields.'; return; }
+    err.textContent = '';
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Registering…';
+    App.post(body).then(function (res) {
+      if (res.success || res.closed) {
+        walkInPanel.classList.add('hidden');
+        showResult(res);
+      } else {
+        err.textContent = res.message || 'Something went wrong.';
+      }
+    }).catch(function () {
+      err.textContent = 'Cannot reach the server. Please check your internet connection and try again.';
+    }).then(function () {
+      btn.disabled = false;
+      btn.textContent = 'Register';
+    });
+  });
 
   loadEvent();
   input.focus();

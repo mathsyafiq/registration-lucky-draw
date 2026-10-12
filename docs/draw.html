@@ -64,6 +64,7 @@
   .announce .bars i:nth-child(2) { animation-delay: .2s; } .announce .bars i:nth-child(3) { animation-delay: .4s; }
   @keyframes eq { 0%,100% { height: 4px; } 50% { height: 18px; } }
   .reveal .row { justify-content: center; margin-top: 28px; }
+  #stopBtn { margin-top: 12px; }
 
   /* Settings drawer */
   .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(400px, 100%); z-index: 60; background: var(--surface); border-left: 1px solid var(--border); padding: 22px; overflow-y: auto; transform: translateX(100%); transition: transform .25s ease; }
@@ -144,6 +145,7 @@
     <div class="wn" id="rvName"></div>
     <div class="wd" id="rvDept"></div>
     <div class="announce" id="announce"></div>
+    <div><button class="btn danger small hidden" id="stopBtn" type="button">⏹ Stop announcement</button></div>
     <div class="row">
       <button class="btn gold" id="continueBtn" type="button">Continue</button>
       <button class="btn ghost" id="againBtn" type="button">🔊 Announce again</button>
@@ -165,8 +167,8 @@
 
   <label class="field"><span>Announcement language</span>
     <select id="langSelect">
-      <option value="ms">Bahasa Melayu — "Nombor staf…"</option>
-      <option value="en">English — "Staff number…"</option>
+      <option value="ms">Bahasa Melayu (satu, dua, tiga…)</option>
+      <option value="en">English (one, two, three…)</option>
     </select>
   </label>
 
@@ -361,9 +363,9 @@ var Voice = (function () {
     synth.speak(u);
   }
 
-  function text(staffId, lang) {
-    var digits = String(staffId).split('').join(', ');
-    return (lang === 'en' ? 'Staff number. ' : 'Nombor staf. ') + digits + '.';
+  // Number only, digit by digit: "2, 4, 0, 1, 5, 3"
+  function text(staffId) {
+    return String(staffId).split('').join(', ') + '.';
   }
 
   function sayOnce(msg, lang) {
@@ -386,7 +388,7 @@ var Voice = (function () {
     if (!synth) { onStep(-1); return Promise.resolve(); }
     var id = ++runId;
     synth.cancel();
-    var msg = text(staffId, lang);
+    var msg = text(staffId);
     var chain = Promise.resolve();
     for (var i = 0; i < times; i++) {
       (function (n) {
@@ -660,7 +662,8 @@ function celebrate() {
 // ============================================================
 var overlay = document.getElementById('winnerOverlay');
 var announceEl = document.getElementById('announce');
-var ANNOUNCE_TIMES = 3;
+var ANNOUNCE_TIMES = 2;
+var stopBtn = document.getElementById('stopBtn');
 
 function showWinner(w) {
   document.getElementById('rvDrawNo').textContent = 'Lucky Draw #' + w.drawNo + ' of ' + state.event.drawCount;
@@ -675,15 +678,22 @@ function announceWinner(w) {
   Voice.announce(w.staffId, state.event.announceLang, ANNOUNCE_TIMES, function (i) {
     if (i < 0) {
       announceEl.innerHTML = Voice.supported ? '' : 'Voice announcement is not supported in this browser.';
+      stopBtn.classList.add('hidden');
       return;
     }
+    stopBtn.classList.remove('hidden');
     announceEl.innerHTML = '<span class="bars"><i></i><i></i><i></i></span> Announcing ' + (i + 1) + ' / ' + ANNOUNCE_TIMES;
   });
 }
 
-function closeWinner() {
+function stopAnnouncement() {
   Voice.stop();
   announceEl.innerHTML = '';
+  stopBtn.classList.add('hidden');
+}
+
+function closeWinner() {
+  stopAnnouncement();
   overlay.classList.add('hidden');
   state.current = null;
   buildLabels();
@@ -691,6 +701,7 @@ function closeWinner() {
 }
 
 document.getElementById('continueBtn').addEventListener('click', closeWinner);
+stopBtn.addEventListener('click', stopAnnouncement);
 document.getElementById('againBtn').addEventListener('click', function () {
   if (state.current) announceWinner(state.current);
 });

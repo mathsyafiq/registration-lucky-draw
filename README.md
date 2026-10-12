@@ -2,8 +2,8 @@
 
 - `docs/` — frontend, served by GitHub Pages
   - `index.html` — home page linking to the three pages
-  - `register.html` — **Participants**: scan QR → enter Staff ID → registered
-  - `draw.html` — **Lucky Draw**: wheel of fortune, drum roll, announces the winner's Staff ID 3 times (PIN)
+  - `register.html` — **Participants**: scan QR → enter Staff ID → registered (staff not in the list can register as walk-ins)
+  - `draw.html` — **Lucky Draw**: wheel of fortune, drum roll, announces the winner's Staff ID twice (PIN)
   - `admin.html` — **Admin**: live attendance, upload participant list, QR poster, winners, new event (PIN)
   - `assets/app.js` — shared helpers + **API URL setting**
 - `apps-script/Code.gs` — backend API (Google Apps Script + Google Sheet)
@@ -14,6 +14,7 @@
 2. Replace the contents of `Code.gs` with `apps-script/Code.gs`.
 3. **Project Settings (⚙)** → Time zone: **(GMT+08:00) Kuala Lumpur**.
 4. Run `initialize()` once (authorise when asked). It creates the `Settings`, `Participants` and `Winners` tabs.
+   It creates the `Departments` tab too.
    Your **admin PIN** is printed in the execution log and is also in the `Settings` tab. Change it from the Admin page.
 5. **Deploy → New deployment → Web app**
    - Execute as: **Me**
@@ -48,9 +49,15 @@ Your site will be at `https://<user>.github.io/<repo>/`.
    the kiosk link (it resets the form after each person).
 3. Watch arrivals on **Admin → Overview** (refreshes every 10 s). Staff without a phone can be registered
    manually from **Admin → Participants**.
+   - **Walk-ins:** if a Staff ID is not in the list, the participant can tap *Register as a new participant*, enter
+     their name and choose their department. They are added to the list (marked *Walk-in*) and join the lucky draw.
+     Turn this on/off in **Admin → Event setup → Allow walk-in registration**.
+   - **Departments** for the walk-in dropdown: **Admin → Event setup → Departments** (one per line), or type them into
+     the `Departments` tab of the Google Sheet. Until a list is set, the departments in the participant list are used.
 4. When it's time for the draw, open **Lucky Draw** on the projector laptop, enter the PIN, open **⚙ Settings**
    and set the number of lucky draws. Click **Full screen**. Press **▶ Test sound & voice** once to check the speakers.
-5. The VIP clicks **SPIN** (or press Space). After the drum roll the winner's Staff ID is shown and announced 3 times.
+5. The VIP clicks **SPIN** (or press Space). After the drum roll the winner's Staff ID is shown and announced twice,
+   digit by digit (e.g. "dua, empat, kosong, satu, satu, kosong"). **⏹ Stop announcement** stops the voice.
    - **Continue** → the winner is removed from the wheel; spin for the next prize.
    - **Winner absent — void** → the prize goes back into play; that person is not drawn again.
 6. You may close registration from the Admin header when the draw starts.
