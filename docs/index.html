@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Registration & Lucky Draw</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/app.css">
+<style>
+  .hero { text-align: center; margin: 24px 0 40px; animation: fadeUp .5s ease both; }
+  .hero .title { margin: 16px 0 8px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px; }
+  .card {
+    display: block; text-decoration: none; color: var(--text);
+    background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 26px;
+    transition: transform .2s, border-color .2s, box-shadow .2s; animation: fadeUp .5s ease both;
+  }
+  .card:hover { transform: translateY(-4px); border-color: var(--gold); box-shadow: 0 12px 40px rgba(247,201,72,.12); }
+  .card .icon { width: 52px; height: 52px; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 26px; margin-bottom: 16px; }
+  .card h2 { font-family: var(--display); font-size: 22px; margin-bottom: 6px; }
+  .card p { color: var(--muted); font-size: 14px; }
+  .card:nth-child(2) { animation-delay: .08s; }
+  .card:nth-child(3) { animation-delay: .16s; }
+  .warn { margin-top: 24px; text-align: center; color: var(--red); font-size: 14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hero">
+    <span class="badge">Registration &amp; Lucky Draw</span>
+    <h1 class="title" id="eventName">Welcome</h1>
+    <p class="subtitle" id="eventDate"></p>
+  </div>
+
+  <div class="cards">
+    <a class="card" data-page="register.html" href="register.html">
+      <div class="icon" style="background:rgba(43,217,159,.14)">📝</div>
+      <h2>Participants</h2>
+      <p>Register your attendance with your Staff ID.</p>
+    </a>
+    <a class="card" data-page="draw.html" href="draw.html">
+      <div class="icon" style="background:rgba(247,201,72,.14)">🎡</div>
+      <h2>Lucky Draw</h2>
+      <p>Wheel of fortune for the organiser and VIP. PIN required.</p>
+    </a>
+    <a class="card" data-page="admin.html" href="admin.html">
+      <div class="icon" style="background:rgba(124,92,255,.16)">📊</div>
+      <h2>Admin</h2>
+      <p>Monitor attendance, upload participant lists, manage events. PIN required.</p>
+    </a>
+  </div>
+  <p class="warn hidden" id="warn">API URL not set. Edit <code>DEFAULT_API_URL</code> in <code>docs/assets/app.js</code>.</p>
+</div>
+
+<script src="assets/app.js"></script>
+<script>
+  if (!App.isConfigured()) {
+    document.getElementById('warn').classList.remove('hidden');
+  } else {
+    App.get({ action: 'info' }).then(function (res) {
+      if (!res.success) return;
+      document.getElementById('eventName').textContent = res.event.name || 'Welcome';
+      document.getElementById('eventDate').textContent = res.event.date || '';
+      document.title = (res.event.name || 'Event') + ' · Registration & Lucky Draw';
+    }).catch(function () {});
+  }
+</script>
+</body>
+</html>

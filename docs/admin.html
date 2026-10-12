@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/app.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  .topbar { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+  .topbar h1 { font-family: var(--display); font-size: clamp(22px, 4vw, 32px); font-weight: 800; line-height: 1.15; margin-top: 8px; }
+  .tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--border); margin-bottom: 22px; overflow-x: auto; }
+  .tab { background: none; border: none; color: var(--muted); font: inherit; font-weight: 700; font-size: 14px; padding: 12px 14px; cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; }
+  .tab.active { color: var(--text); border-bottom-color: var(--gold); }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; margin-bottom: 20px; }
+  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 18px; }
+  .stat .k { color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
+  .stat .v { font-family: var(--display); font-size: 36px; font-weight: 800; line-height: 1.1; margin-top: 6px; }
+  .bar { height: 10px; border-radius: 10px; background: var(--card); overflow: hidden; }
+  .bar > i { display: block; height: 100%; background: linear-gradient(90deg, var(--green), #8ef0c9); border-radius: 10px; transition: width .4s; }
+  .bar.big { height: 14px; margin-top: 12px; }
+  .dept-row { display: grid; grid-template-columns: minmax(120px, 1.2fr) 2fr 70px; gap: 12px; align-items: center; padding: 8px 0; font-size: 14px; }
+  .dept-row + .dept-row { border-top: 1px solid var(--border); }
+  .dept-row .n { text-align: right; font-family: var(--display); font-weight: 700; }
+  .recent li { list-style: none; display: flex; justify-content: space-between; gap: 10px; padding: 9px 0; font-size: 14px; }
+  .recent li + li { border-top: 1px solid var(--border); }
+  .recent .who { min-width: 0; }
+  .recent .who div:last-child { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .recent .t { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .updated { font-size: 12px; color: var(--muted); }
+  .toolbar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  .toolbar input { flex: 1; min-width: 200px; }
+  .toolbar select { width: auto; }
+  .qr-box { display: flex; gap: 22px; flex-wrap: wrap; align-items: center; }
+  #qr { background: #fff; padding: 14px; border-radius: 14px; width: 228px; height: 228px; }
+  #qr img, #qr canvas { width: 200px; height: 200px; }
+  .linkbox { font-family: ui-monospace, Menlo, monospace; font-size: 12px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 10px; word-break: break-all; margin: 8px 0 12px; }
+  .preview { font-size: 13px; color: var(--muted); margin: 10px 0; }
+  .preview table { font-size: 13px; margin-top: 8px; }
+  .danger-zone { border-color: rgba(255,93,115,.35); }
+  .radio { display: flex; gap: 18px; flex-wrap: wrap; margin: 6px 0 14px; font-size: 14px; }
+  .radio label { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+  .radio input { accent-color: var(--accent); }
+  code { background: var(--card); padding: 1px 6px; border-radius: 6px; font-size: 12px; }
+</style>
+</head>
+<body>
+
+<div class="gate" id="pinGate">
+  <div class="gate-card panel">
+    <span class="badge">Admin</span>
+    <h1 class="title">Admin PIN</h1>
+    <p class="muted">Enter the admin PIN to open the dashboard.</p>
+    <form id="pinForm">
+      <input type="password" id="pinInput" autocomplete="current-password" placeholder="••••••">
+      <div class="gate-error" id="pinError"></div>
+      <button class="btn gold block" type="submit">Open Admin</button>
+    </form>
+    <div class="gate-note" id="pinBackend"></div>
+  </div>
+</div>
+
+<div class="wrap">
+  <header class="topbar">
+    <div>
+      <span class="badge">Admin Dashboard</span>
+      <h1 id="eventName">&nbsp;</h1>
+      <div class="muted" id="eventDate"></div>
+    </div>
+    <div class="row">
+      <span class="pill" id="regPill"></span>
+      <button class="btn ghost small" id="toggleRegBtn" type="button"></button>
+      <a class="btn ghost small" data-page="draw.html" href="draw.html" target="_blank">🎡 Lucky Draw</a>
+      <button class="btn ghost small" id="logoutBtn" type="button">Log out</button>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="overview" type="button">Overview</button>
+    <button class="tab" data-tab="participants" type="button">Participants</button>
+    <button class="tab" data-tab="winners" type="button">Winners</button>
+    <button class="tab" data-tab="setup" type="button">Event setup</button>
+  </nav>
+
+  <!-- OVERVIEW -->
+  <section id="tab-overview">
+    <div class="stats">
+      <div class="stat"><div class="k">Registered</div><div class="v" id="stReg">0</div></div>
+      <div class="stat"><div class="k">Not yet</div><div class="v" id="stNot">0</div></div>
+      <div class="stat"><div class="k">Total participants</div><div class="v" id="stTotal">0</div></div>
+      <div class="stat"><div class="k">Attendance</div><div class="v" id="stPct">0%</div><div class="bar big"><i id="stBar" style="width:0"></i></div></div>
+    </div>
+    <div class="grid2">
+      <div class="panel">
+        <div class="section-title">By department</div>
+        <div class="section-sub">Registered / total</div>
+        <div id="deptList"></div>
+      </div>
+      <div class="panel">
+        <div class="row" style="justify-content:space-between">
+          <div class="section-title">Latest registrations</div>
+          <span class="updated" id="updated"></span>
+        </div>
+        <div class="section-sub">Refreshes every 10 seconds</div>
+        <ul class="recent" id="recentList"></ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- PARTICIPANTS -->
+  <section id="tab-participants" class="hidden">
+    <div class="panel">
+      <div class="toolbar">
+        <input type="search" id="search" placeholder="Search Staff ID, name or department">
+        <select id="filter">
+          <option value="all">All</option>
+          <option value="yes">Registered</option>
+          <option value="no">Not registered</option>
+        </select>
+        <button class="btn ghost small" id="reloadParts" type="button">↻ Reload</button>
+        <button class="btn ghost small" id="exportParts" type="button">⬇ Export CSV</button>
+      </div>
+      <div class="muted" style="font-size:13px;margin-bottom:10px" id="partCount"></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Staff ID</th><th>Name</th><th>Department</th><th>Status</th><th>Time</th><th></th></tr></thead>
+          <tbody id="partBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- WINNERS -->
+  <section id="tab-winners" class="hidden">
+    <div class="panel">
+      <div class="row" style="justify-content:space-between;margin-bottom:14px">
+        <div>
+          <div class="section-title">Lucky draw winners</div>
+          <div class="section-sub" id="winSub" style="margin:0"></div>
+        </div>
+        <div class="row">
+          <button class="btn ghost small" id="exportWinners" type="button">⬇ Export CSV</button>
+          <button class="btn danger small" id="resetDrawBtn" type="button">Reset all draws</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Staff ID</th><th>Name</th><th>Department</th><th>Drawn at</th><th>Status</th><th></th></tr></thead>
+          <tbody id="winBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- SETUP -->
+  <section id="tab-setup" class="hidden">
+    <div class="grid2">
+      <div class="panel">
+        <div class="section-title">Event details</div>
+        <div class="section-sub">Shown on the registration and lucky draw pages.</div>
+        <label class="field"><span>Event name</span><input type="text" id="setName" maxlength="150"></label>
+        <label class="field"><span>Event date</span><input type="text" id="setDate" maxlength="60" placeholder="e.g. 12 October 2026"></label>
+        <label class="field"><span>Lucky draw announcement language</span>
+          <select id="setLang"><option value="ms">Bahasa Melayu</option><option value="en">English</option></select>
+        </label>
+        <label class="check"><input type="checkbox" id="setOpen"> Registration is open</label>
+        <button class="btn" id="saveEventBtn" type="button">Save</button>
+      </div>
+
+      <div class="panel">
+        <div class="section-title">Registration QR code</div>
+        <div class="section-sub">Print this and place it at the entrance.</div>
+        <div class="qr-box">
+          <div id="qr"></div>
+          <div style="flex:1;min-width:200px">
+            <div class="linkbox" id="regLink"></div>
+            <div class="row">
+              <button class="btn small" id="posterBtn" type="button">🖨 Print poster</button>
+              <button class="btn ghost small" id="downloadQr" type="button">⬇ PNG</button>
+              <button class="btn ghost small" id="copyLink" type="button">Copy link</button>
+            </div>
+            <p class="muted" style="font-size:12px;margin-top:12px">For a shared tablet at the door, use the <a id="kioskLink" target="_blank">kiosk link</a>: it returns to the form after each person.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="section-title">Upload participant list</div>
+      <div class="section-sub">Copy the columns <b>Staff ID, Name, Department</b> from Excel or Google Sheets and paste below, or choose a CSV file. A header row is detected automatically.</div>
+      <textarea id="importText" placeholder="Staff ID&#9;Name&#9;Department&#10;123456&#9;Ahmad bin Ali&#9;Faculty of Computer Science&#10;123457&#9;Siti Aminah&#9;Registrar Office"></textarea>
+      <div class="row" style="margin-top:10px">
+        <input type="file" id="importFile" accept=".csv,.tsv,.txt,text/csv">
+      </div>
+      <div class="preview" id="importPreview"></div>
+      <div class="radio">
+        <label><input type="radio" name="importMode" value="replace" checked> Replace the whole list</label>
+        <label><input type="radio" name="importMode" value="append"> Add to the existing list</label>
+      </div>
+      <button class="btn gold" id="importBtn" type="button" disabled>Upload list</button>
+    </div>
+
+    <div class="grid2">
+      <div class="panel danger-zone">
+        <div class="section-title">Start a new event</div>
+        <div class="section-sub">The current attendance and winners are copied to new tabs in the Google Sheet (archive), then cleared.</div>
+        <label class="field"><span>New event name</span><input type="text" id="newName" maxlength="150"></label>
+        <label class="field"><span>New event date</span><input type="text" id="newDate" maxlength="60"></label>
+        <label class="check"><input type="checkbox" id="keepList"> Keep the same participant list (only reset attendance)</label>
+        <button class="btn danger" id="newEventBtn" type="button">Archive &amp; start new event</button>
+      </div>
+
+      <div class="panel">
+        <div class="section-title">Change admin PIN</div>
+        <div class="section-sub">Used for both the Admin and Lucky Draw pages. At least 4 characters; 6 or more is better.</div>
+        <label class="field"><span>New PIN</span><input type="password" id="pin1" autocomplete="new-password"></label>
+        <label class="field"><span>Confirm new PIN</span><input type="password" id="pin2" autocomplete="new-password"></label>
+        <button class="btn" id="pinBtn" type="button">Change PIN</button>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script src="assets/app.js"></script>
+<script>
+var state = { pin: null, dash: null, participants: null, tab: 'overview', importRows: [] };
+var refreshTimer;
+
+function call(action, extra) {
+  var body = Object.assign({ action: action, pin: state.pin }, extra || {});
+  return App.post(body).then(function (res) {
+    if (!res.success && res.auth === false) App.logout();
+    return res;
+  }).catch(function () {
+    return { success: false, message: 'Cannot reach the server. Check your connection.' };
+  });
+}
+
+function withButton(btn, promise) {
+  btn.disabled = true;
+  return promise.then(function (res) { btn.disabled = false; return res; });
+}
+
+// ── Tabs ─────────────────────────────────────────────────────
+document.querySelectorAll('.tab').forEach(function (t) {
+  t.addEventListener('click', function () { showTab(t.getAttribute('data-tab')); });
+});
+
+function showTab(name) {
+  state.tab = name;
+  document.querySelectorAll('.tab').forEach(function (t) { t.classList.toggle('active', t.getAttribute('data-tab') === name); });
+  ['overview', 'participants', 'winners', 'setup'].forEach(function (n) {
+    document.getElementById('tab-' + n).classList.toggle('hidden', n !== name);
+  });
+  if (name === 'participants') loadParticipants();
+  if (name === 'setup') { fillSetup(); makeQr(); }
+  if (name === 'overview' || name === 'winners') loadDashboard();
+}
+
+// ── Dashboard ────────────────────────────────────────────────
+function loadDashboard() {
+  return call('dashboard').then(function (res) {
+    if (!res.success) { App.toast(res.message, 'error'); return; }
+    state.dash = res;
+    renderHeader(res.event);
+    renderOverview(res);
+    renderWinners(res);
+  });
+}
+
+function renderHeader(ev) {
+  document.getElementById('eventName').textContent = ev.name || '(Untitled event)';
+  document.getElementById('eventDate').textContent = ev.date || '';
+  document.title = 'Admin · ' + (ev.name || 'Event');
+  var pill = document.getElementById('regPill');
+  pill.className = 'pill ' + (ev.registrationOpen ? 'green' : 'red');
+  pill.innerHTML = '<span class="dot"></span>Registration ' + (ev.registrationOpen ? 'open' : 'closed');
+  document.getElementById('toggleRegBtn').textContent = ev.registrationOpen ? 'Close registration' : 'Open registration';
+}
+
+function renderOverview(d) {
+  var total = d.stats.total, reg = d.stats.registered;
+  var pct = total ? Math.round(reg / total * 100) : 0;
+  document.getElementById('stReg').textContent = reg;
+  document.getElementById('stNot').textContent = total - reg;
+  document.getElementById('stTotal').textContent = total;
+  document.getElementById('stPct').textContent = pct + '%';
+  document.getElementById('stBar').style.width = pct + '%';
+  document.getElementById('updated').textContent = 'Updated ' + d.serverTime;
+
+  document.getElementById('deptList').innerHTML = d.departments.length ? d.departments.map(function (x) {
+    var p = x.total ? Math.round(x.registered / x.total * 100) : 0;
+    return '<div class="dept-row"><div>' + App.esc(x.name) + '</div><div class="bar"><i style="width:' + p + '%"></i></div>' +
+      '<div class="n">' + x.registered + ' / ' + x.total + '</div></div>';
+  }).join('') : '<p class="muted">No participants yet. Upload a list in Event setup.</p>';
+
+  document.getElementById('recentList').innerHTML = d.recent.length ? d.recent.map(function (r) {
+    return '<li><div class="who"><div><b class="mono">' + App.esc(r.staffId) + '</b> · ' + App.esc(r.name) + '</div>' +
+      '<div>' + App.esc(r.department) + '</div></div><div class="t">' + App.esc(r.time) +
+      (r.method === 'Manual' ? '<br>manual' : '') + '</div></li>';
+  }).join('') : '<p class="muted">No registrations yet.</p>';
+}
+
+function startAutoRefresh() {
+  clearInterval(refreshTimer);
+  refreshTimer = setInterval(function () {
+    if (document.hidden) return;
+    if (state.tab === 'overview' || state.tab === 'winners') loadDashboard();
+  }, 10000);
+}
+
+document.getElementById('toggleRegBtn').addEventListener('click', function () {
+  var open = !(state.dash && state.dash.event.registrationOpen);
+  withButton(this, call('saveSettings', { registrationOpen: open })).then(function (res) {
+    if (!res.success) { App.toast(res.message, 'error'); return; }
+    state.dash.event = res.event;
+    renderHeader(res.event);
+    App.toast('Registration ' + (open ? 'opened' : 'closed') + '.', 'ok');
+  });
+});
+
+// ── Participants ─────────────────────────────────────────────
+var MAX_ROWS = 300;
+
+function loadParticipants() {
+  document.getElementById('partCount').textContent = 'Loading…';
+  return call('participants').then(function (res) {
+    if (!res.success) { App.toast(res.message, 'error'); return; }
+    state.participants = res.participants;
+    renderParticipants();
+  });
+}
+
+function fmtTime(ms) {
+  if (!ms) return '';
+  var d = new Date(ms);
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + ', ' +
+    d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+}
+
+function filteredParticipants() {
+  var q = document.getElementById('search').value.trim().toLowerCase();
+  var f = document.getElementById('filter').value;
+  return (state.participants || []).filter(function (p) {
+    if (f === 'yes' && !p.registered) return false;
+    if (f === 'no' && p.registered) return false;
+    if (!q) return true;
+    return (p.staffId + ' ' + p.name + ' ' + p.department).toLowerCase().indexOf(q) >= 0;
+  });
+}
+
+function renderParticipants() {
+  var list = filteredParticipants();
+  var all = state.participants || [];
+  var reg = all.filter(function (p) { return p.registered; }).length;
+  document.getElementById('partCount').textContent =
+    list.length + ' shown · ' + reg + ' of ' + all.length + ' registered' +
+    (list.length > MAX_ROWS ? ' · showing first ' + MAX_ROWS + ', use search to narrow' : '');
+  document.getElementById('partBody').innerHTML = list.slice(0, MAX_ROWS).map(function (p) {
+    return '<tr><td class="mono">' + App.esc(p.staffId) + '</td><td>' + App.esc(p.name) + '</td><td>' + App.esc(p.department) + '</td>' +
+      '<td>' + (p.registered ? '<span class="pill green">Registered</span>' : '<span class="pill grey">Not yet</span>') + '</td>' +
+      '<td class="muted" style="font-size:12px;white-space:nowrap">' + fmtTime(p.registeredAt) + (p.method === 'Manual' ? ' · manual' : '') + '</td>' +
+      '<td style="text-align:right">' + (p.registered
+        ? '<button class="btn ghost small" data-act="unregister" data-id="' + App.esc(p.staffId) + '">Undo</button>'
+        : '<button class="btn small" data-act="manualRegister" data-id="' + App.esc(p.staffId) + '">Register</button>') +
+      '</td></tr>';
+  }).join('') || '<tr><td colspan="6" class="muted" style="text-align:center;padding:24px">No participants.</td></tr>';
+}
+
+document.getElementById('partBody').addEventListener('click', function (e) {
+  var btn = e.target.closest('button[data-act]');
+  if (!btn) return;
+  var act = btn.getAttribute('data-act'), id = btn.getAttribute('data-id');
+  if (act === 'unregister' && !confirm('Undo registration for ' + id + '?')) return;
+  withButton(btn, call(act, { staffId: id })).then(function (res) {
+    if (!res.success) { App.toast(res.message, 'error'); return; }
+    var p = state.participants.find(function (x) { return x.staffId === id; });
+    if (p) {
+      p.registered = act === 'manualRegister';
+      p.registeredAt = p.registered ? Date.now() : null;
+      p.method = p.registered ? 'Manual' : '';
+    }
+    renderParticipants();
+    App.toast(act === 'manualRegister' ? id + ' registered.' : 'Registration undone for ' + id + '.', 'ok');
+  });
+});
+
+document.getElementById('search').addEventListener('input', renderParticipants);
+document.getElementById('filter').addEventListener('change', renderParticipants);
+document.getElementById('reloadParts').addEventListener('click', loadParticipants);
+document.getElementById('exportParts').addEventListener('click', function () {
+  var rows = [['Staff ID', 'Name', 'Department', 'Status', 'Registered At', 'Method']].concat(
+    (state.participants || []).map(function (p) {
+      return [p.staffId, p.name, p.department, p.registered ? 'Registered' : '', fmtTime(p.registeredAt), p.method];
+    }));
+  downloadCsv(rows, fileBase() + ' - attendance.csv');
+});
+
+// ── Winners ──────────────────────────────────────────────────
+function renderWinners(d) {
+  var valid = d.winners.filter(function (w) { return w.status !== 'VOID'; }).length;
+  document.getElementById('winSub').textContent = valid + ' of ' + d.event.drawCount + ' prizes drawn';
+  document.getElementById('winBody').innerHTML = d.winners.map(function (w) {
+    var isVoid = w.status === 'VOID';
+    return '<tr class="' + (isVoid ? 'void' : '') + '"><td>' + w.drawNo + '</td><td class="mono">' + App.esc(w.staffId) + '</td>' +
+      '<td>' + App.esc(w.name) + '</td><td>' + App.esc(w.department) + '</td><td class="muted" style="font-size:12px">' + App.esc(w.drawnAt) + '</td>' +
+      '<td>' + (isVoid ? '<span class="pill red">VOID</span>' : '<span class="pill gold">WON</span>') + '</td>' +
+      '<td style="text-align:right">' + (isVoid ? '' : '<button class="btn danger small" data-void="' + App.esc(w.staffId) + '">Void</button>') + '</td></tr>';
+  }).join('') || '<tr><td colspan="7" class="muted" style="text-align:center;padding:24px">No winners yet.</td></tr>';
+}
+
+document.getElementById('winBody').addEventListener('click', function (e) {
+  var btn = e.target.closest('button[data-void]');
+  if (!btn) return;
+  var id = btn.getAttribute('data-void');
+  if (!confirm('Void the prize for ' + id + '? The prize goes back into the draw; this person will not be drawn again.')) return;
+  withButton(btn, call('voidWinner', { staffId: id })).then(function (res) {
+    if (!res.success) { App.toast(res.message, 'error'); return; }
+    App.toast('Voided.', 'ok');
+    loadDashboard();
+  });
+});
+
+document.getElementById('resetDrawBtn').addEventListener('click', function () {
+  var typed = prompt('This deletes ALL lucky draw results for this event.\nType RESET to confirm.');
+  if (typed !== 'RESET') return;
+  withButton(this, call('resetDraw')).then(function (res) {
+    if (!res.success) { App.toast(res.message, 'error'); return; }
+    App.toast('All draws cleared.', 'ok');
+    loadDashboard();
+  });
+});
+
+document.getElementById('exportWinners').addEventListener('click', function () {
+  var rows = [['Draw No', 'Staff ID', 'Name', 'Department', 'Drawn At', 'Status']].concat(
+    ((state.dash && state.dash.winners) || []).map(function (w) {
+      return [w.drawNo, w.staffId, w.name, w.department, w.drawnAt, w.status];
+    }));
+  downloadCsv(rows, fileBase() + ' - winners.csv');
+});
+
+// ── Setup: event details ─────────────────────────────────────
+function fillSetup() {
+  var ev = state.dash ? state.dash.event : null;
+  if (!ev) return;
+  document.getElementById('setName').value = ev.name;
+  document.getElementById('setDate').value = ev.date;
+  document.getElementById('setLang').value = ev.announceLang;
+  document.getElementById('setOpen').checked = ev.registrationOpen;
+}
+
+document.getElementById('saveEventBtn').addEventListener('click', function () {
+  withButton(this, call('saveSettings', {
+    eventName: document.getElementById('setName').value,
+    eventDate: document.getElementById('setDate').value,
+    announceLang: document.getElementById('setLang').value,
+    registrationOpen: document.getElementById('setOpen').checked
+  })).then(function (res) {
+    if (!res.success) { App.toast(res.message, 'error'); return; }
+    state.dash.event = res.event;
+    renderHeader(res.event);
+    makeQr();
+    App.toast('Event details saved.', 'ok');
+  });
+});
+
+// ── Setup: QR code ───────────────────────────────────────────
+var qrMade = false;
+function registerUrl() { return App.absoluteLink('register.html'); }
+
+function makeQr() {
+  var url = registerUrl();
+  document.getElementById('regLink').textContent = url;
+  document.getElementById('kioskLink').href = url + (url.indexOf('?') >= 0 ? '&' : '?') + 'kiosk=1';
+  if (qrMade || typeof QRCode === 'undefined') return;
+  new QRCode(document.getElementById('qr'), { text: url, width: 400, height: 400, correctLevel: QRCode.CorrectLevel.M });
+  qrMade = true;
+}
+
+function qrDataUrl() {
+  var c = document.querySelector('#qr canvas');
+  return c ? c.toDataURL('image/png') : '';
+}
+
+document.getElementById('downloadQr').addEventListener('click', function () {
+  var a = document.createElement('a');
+  a.href = qrDataUrl();
+  a.download = fileBase() + ' - registration QR.png';
+  a.click();
+});
+
+document.getElementById('copyLink').addEventListener('click', function () {
+  navigator.clipboard.writeText(registerUrl()).then(function () { App.toast('Link copied.', 'ok'); },
+    function () { App.toast('Copy failed. Select the link and copy it manually.', 'error'); });
+});
+
+document.getElementById('posterBtn').addEventListener('click', function () {
+  var ev = state.dash ? state.dash.event : { name: '', date: '' };
+  var w = window.open('', '_blank');
+  if (!w) { App.toast('Allow pop-ups to print the poster.', 'error'); return; }
+  w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Registration QR</title>' +
+    '<style>body{font-family:system-ui,sans-serif;text-align:center;padding:48px 24px;color:#111}' +
+    'h1{font-size:40px;margin:0 0 8px}h2{font-size:22px;font-weight:500;color:#555;margin:0 0 36px}' +
+    'img{width:420px;max-width:90vw;border:12px solid #fff;outline:2px solid #ddd;border-radius:12px}' +
+    '.cta{font-size:30px;font-weight:800;margin:32px 0 6px}.sub{font-size:20px;color:#444}.url{font-size:12px;color:#888;margin-top:24px;word-break:break-all}' +
+    '@media print{button{display:none}}</style></head><body>' +
+    '<h1>' + App.esc(ev.name) + '</h1><h2>' + App.esc(ev.date) + '</h2>' +
+    '<img src="' + qrDataUrl() + '" alt="QR code">' +
+    '<div class="cta">Scan to register · Imbas untuk daftar</div>' +
+    '<div class="sub">Enter your Staff ID · Masukkan No. Staf anda</div>' +
+    '<div class="url">' + App.esc(registerUrl()) + '</div>' +
+    '<p><button onclick="print()" style="margin-top:24px;font-size:18px;padding:10px 24px">Print</button></p>' +
+    '</body></html>');
+  w.document.close();
+});
+
+// ── Setup: import ────────────────────────────────────────────
+function parseTable(text) {
+  text = String(text || '').replace(/\r\n?/g, '\n').replace(/^﻿/, '').trim();
+  if (!text) return { rows: [], header: null };
+  var first = text.split('\n')[0];
+  var delim = first.indexOf('\t') >= 0 ? '\t' : (first.split(';').length > first.split(',').length ? ';' : ',');
+
+  var rows = [], row = [], cell = '', q = false;
+  for (var i = 0; i < text.length; i++) {
+    var ch = text[i];
+    if (q) {
+      if (ch === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; }
+      else cell += ch;
+    } else if (ch === '"' && cell === '') q = true;
+    else if (ch === delim) { row.push(cell); cell = ''; }
+    else if (ch === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; }
+    else cell += ch;
+  }
+  row.push(cell); rows.push(row);
+  rows = rows.map(function (r) { return r.map(function (c) { return c.trim(); }); })
+    .filter(function (r) { return r.some(function (c) { return c; }); });
+
+  // Header row: map columns by name
+  var cols = [0, 1, 2], header = null;
+  if (rows.length && /staf|id|no|nama|name/i.test(rows[0].join(' ')) && !/\d{3,}/.test(rows[0].join(' '))) {
+    header = rows.shift();
+    var find = function (re, fallback) {
+      for (var j = 0; j < header.length; j++) if (re.test(header[j])) return j;
+      return fallback;
+    };
+    cols = [
+      find(/staf|\bid\b|pekerja/i, find(/^no/i, 0)),
+      find(/name|nama/i, 1),
+      find(/dep|jabatan|fakulti|faculty|unit|bahagian|pusat|division|ptj/i, 2)
+    ];
+  }
+  return {
+    header: header,
+    rows: rows.map(function (r) { return [r[cols[0]] || '', r[cols[1]] || '', r[cols[2]] || '']; })
+      .filter(function (r) { return r[0]; })
+  };
+}
+
+function updatePreview() {
+  var parsed = parseTable(document.getElementById('importText').value);
+  state.importRows = parsed.rows;
+  var el = document.getElementById('importPreview');
+  document.getElementById('importBtn').disabled = !parsed.rows.length;
+  if (!parsed.rows.length) { el.innerHTML = ''; return; }
+  el.innerHTML = '<b style="color:var(--text)">' + parsed.rows.length + ' participants found</b>' +
+    (parsed.header ? ' (header row skipped)' : '') + '. First rows:' +
+    '<div class="table-wrap"><table><thead><tr><th>Staff ID</th><th>Name</th><th>Department</th></tr></thead><tbody>' +
+    parsed.rows.slice(0, 5).map(function (r) {
+      return '<tr><td class="mono">' + App.esc(r[0]) + '</td><td>' + App.esc(r[1]) + '</td><td>' + App.esc(r[2]) + '</td></tr>';
+    }).join('') + '</tbody></table></div>';
+}
+
+document.getElementById('importText').addEventListener('input', updatePreview);
+document.getElementById('importFile').addEventListener('change', function () {
+  var file = this.files[0];
+  if (!file) return;
+  if (/\.xlsx?$/i.test(file.name)) { App.toast('Excel files: copy the columns and paste them instead, or save as CSV.', 'error'); return; }
+  var reader = new FileReader();
+  reader.onload = function () {
+    document.getElementById('importText').value = reader.result;
+    updatePreview();
+  };
+  reader.readAsText(file);
+});
+
+document.getElementById('importBtn').addEventListener('click', function () {
+  var mode = document.querySelector('input[name=importMode]:checked').value;
+  var n = state.importRows.length;
+  var msg = mode === 'replace'
+    ? 'Replace the whole participant list with ' + n + ' people?\nCurrent attendance for this event will be lost (winners are kept).'
+    : 'Add ' + n + ' people to the existing list? Staff IDs already on the list are skipped.';
+  if (!confirm(msg)) return;
+  withButton(this, call('importParticipants', { rows: state.importRows, mode: mode })).then(function (res) {
+    if (!res.success) { App.toast(res.message, 'error'); return; }
+    App.toast(res.imported + ' imported' + (res.duplicates ? ', ' + res.duplicates + ' duplicates skipped' : '') +
+      '. Total: ' + res.total + '.', 'ok');
+    document.getElementById('importText').value = '';
+    document.getElementById('importFile').value = '';
+    updatePreview();
+    state.participants = null;
+    loadDashboard();
+  });
+});
+
+// ── Setup: new event ─────────────────────────────────────────
+document.getElementById('newEventBtn').addEventListener('click', function () {
+  var name = document.getElementById('newName').value.trim();
+  if (!name) { App.toast('Enter the new event name.', 'error'); return; }
+  var keep = document.getElementById('keepList').checked;
+  if (!confirm('Start "' + name + '"?\n\nThe current attendance and winners will be archived to new tabs in the Google Sheet, then cleared.' +
+    (keep ? '\nThe participant list is kept.' : '\nThe participant list is cleared; upload the new list next.'))) return;
+  withButton(this, call('newEvent', {
+    eventName: name,
+    eventDate: document.getElementById('newDate').value,
+    keepParticipants: keep
+  })).then(function (res) {
+    if (!res.success) { App.toast(res.message, 'error'); return; }
+    document.getElementById('newName').value = '';
+    document.getElementById('newDate').value = '';
+    state.participants = null;
+    loadDashboard().then(fillSetup);
+    App.toast('New event started: ' + res.event.name, 'ok');
+  });
+});
+
+// ── Setup: PIN ───────────────────────────────────────────────
+document.getElementById('pinBtn').addEventListener('click', function () {
+  var a = document.getElementById('pin1').value.trim(), b = document.getElementById('pin2').value.trim();
+  if (a.length < 4) { App.toast('PIN must be at least 4 characters.', 'error'); return; }
+  if (a !== b) { App.toast('The two PINs do not match.', 'error'); return; }
+  withButton(this, call('saveSettings', { newPin: a })).then(function (res) {
+    if (!res.success) { App.toast(res.message, 'error'); return; }
+    state.pin = a;
+    App.session('pin', a);
+    document.getElementById('pin1').value = '';
+    document.getElementById('pin2').value = '';
+    App.toast('PIN changed. Use the new PIN on the Lucky Draw page too.', 'ok');
+  });
+});
+
+// ── CSV helpers ──────────────────────────────────────────────
+function downloadCsv(rows, filename) {
+  var csv = rows.map(function (r) {
+    return r.map(function (v) {
+      var s = String(v === null || v === undefined ? '' : v);
+      return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    }).join(',');
+  }).join('\r\n');
+  var blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+}
+
+function fileBase() {
+  return ((state.dash && state.dash.event.name) || 'event').replace(/[\\/:*?"<>|]/g, '').slice(0, 60);
+}
+
+document.getElementById('logoutBtn').addEventListener('click', App.logout);
+
+// ── Start ────────────────────────────────────────────────────
+App.pinGate(function (pin) {
+  state.pin = pin;
+  loadDashboard();
+  startAutoRefresh();
+});
+</script>
+</body>
+</html>

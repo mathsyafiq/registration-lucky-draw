@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Registration</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/app.css">
+<style>
+  .head { text-align: center; margin: 20px 0 28px; animation: fadeUp .5s ease both; }
+  .head .title { margin: 14px 0 6px; }
+  .panel { animation: fadeUp .5s .08s ease both; }
+  #staffId { font-size: 24px; text-align: center; letter-spacing: 3px; font-weight: 700; padding: 16px; text-transform: uppercase; }
+  .btn.big { padding: 16px; font-size: 17px; margin-top: 6px; }
+  .result { text-align: center; animation: pop .45s ease both; }
+  .result .mark { width: 84px; height: 84px; border-radius: 50%; margin: 6px auto 18px; display: flex; align-items: center; justify-content: center; font-size: 40px; }
+  .result.ok .mark { background: rgba(43,217,159,.15); border: 2px solid var(--green); color: var(--green); }
+  .result.info .mark { background: rgba(247,201,72,.15); border: 2px solid var(--gold); color: var(--gold); }
+  .result.err .mark { background: rgba(255,93,115,.15); border: 2px solid var(--red); color: var(--red); }
+  .result h2 { font-family: var(--display); font-size: 26px; line-height: 1.2; margin-bottom: 6px; }
+  .result .name { font-family: var(--display); font-size: 22px; font-weight: 800; color: var(--gold2); margin: 14px 0 2px; }
+  .result .dept { color: var(--muted); font-size: 15px; }
+  .result .sid { display: inline-block; margin-top: 12px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 6px 14px; font-family: ui-monospace, Menlo, monospace; font-weight: 700; letter-spacing: 2px; }
+  .result .time { color: var(--muted); font-size: 13px; margin-top: 14px; }
+  .result p.msg { color: var(--muted); font-size: 15px; margin-top: 4px; }
+  .result .btn { margin-top: 22px; }
+  .luck { margin-top: 18px; font-size: 14px; color: var(--gold2); }
+  .closed { text-align: center; padding: 10px 0; }
+  .closed h2 { font-family: var(--display); font-size: 22px; margin-bottom: 6px; }
+  .countdown { font-size: 12px; color: var(--muted); margin-top: 10px; }
+</style>
+</head>
+<body>
+<div class="wrap narrow">
+  <div class="head">
+    <span class="badge">Event Registration</span>
+    <h1 class="title" id="eventName">Registration</h1>
+    <p class="subtitle" id="eventDate"></p>
+  </div>
+
+  <div class="panel" id="formPanel">
+    <form id="regForm" autocomplete="off">
+      <label class="field">
+        <span>Enter your Staff ID</span>
+        <input type="text" id="staffId" maxlength="40" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="e.g. 123456" required>
+      </label>
+      <button class="btn gold block big" id="submitBtn" type="submit">Register</button>
+    </form>
+  </div>
+
+  <div class="panel hidden" id="resultPanel"></div>
+
+  <div class="panel hidden" id="closedPanel">
+    <div class="closed">
+      <h2>Registration is closed</h2>
+      <p class="muted">Please see the registration counter if you need help.</p>
+    </div>
+  </div>
+</div>
+
+<script src="assets/app.js"></script>
+<script>
+  // ?kiosk=1 → returns to the form automatically (for a shared tablet at the door)
+  var KIOSK = new URLSearchParams(location.search).get('kiosk') === '1';
+  var form = document.getElementById('regForm');
+  var input = document.getElementById('staffId');
+  var btn = document.getElementById('submitBtn');
+  var formPanel = document.getElementById('formPanel');
+  var resultPanel = document.getElementById('resultPanel');
+  var kioskTimer;
+
+  function loadEvent() {
+    if (!App.isConfigured()) { App.toast('API URL not set. Edit docs/assets/app.js.', 'error'); return; }
+    App.get({ action: 'info' }).then(function (res) {
+      if (!res.success) return;
+      document.getElementById('eventName').textContent = res.event.name || 'Registration';
+      document.getElementById('eventDate').textContent = res.event.date || '';
+      document.title = 'Register · ' + (res.event.name || 'Event');
+      if (!res.event.registrationOpen) {
+        formPanel.classList.add('hidden');
+        document.getElementById('closedPanel').classList.remove('hidden');
+      }
+    }).catch(function () {});
+  }
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var id = input.value.trim();
+    if (!id) return;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Registering…';
+    App.post({ action: 'register', staffId: id }).then(showResult).catch(function () {
+      showResult({ success: false, message: 'Cannot reach the server. Please check your internet connection and try again.' });
+    }).then(function () {
+      btn.disabled = false;
+      btn.textContent = 'Register';
+    });
+  });
+
+  function showResult(res) {
+    var html;
+    if (res.success && !res.already) {
+      html = '<div class="result ok"><div class="mark">✓</div>' +
+        '<h2>You are registered!</h2>' + personHtml(res) +
+        '<div class="time">Registered at ' + App.esc(res.registeredAt) + '</div>' +
+        '<div class="luck">🍀 You are now in the lucky draw. Good luck!</div>';
+    } else if (res.success && res.already) {
+      html = '<div class="result info"><div class="mark">i</div>' +
+        '<h2>Already registered</h2>' + personHtml(res) +
+        '<div class="time">First registered at ' + App.esc(res.registeredAt) + '</div>';
+    } else if (res.closed) {
+      html = '<div class="result err"><div class="mark">✕</div><h2>Registration is closed</h2>' +
+        '<p class="msg">Please see the registration counter.</p>';
+    } else {
+      html = '<div class="result err"><div class="mark">✕</div><h2>Not registered</h2>' +
+        '<p class="msg">' + App.esc(res.message || 'Something went wrong.') + '</p>';
+    }
+    html += '<button class="btn ghost block" type="button" onclick="resetForm()">' +
+      (res.success ? 'Register another person' : 'Try again') + '</button>' +
+      (KIOSK && res.success ? '<div class="countdown">Returning automatically…</div>' : '') + '</div>';
+
+    resultPanel.innerHTML = html;
+    formPanel.classList.add('hidden');
+    resultPanel.classList.remove('hidden');
+    if (KIOSK) {
+      clearTimeout(kioskTimer);
+      kioskTimer = setTimeout(resetForm, res.success ? 5000 : 8000);
+    }
+  }
+
+  function personHtml(res) {
+    var p = res.participant;
+    return '<div class="name">' + App.esc(p.name) + '</div>' +
+      '<div class="dept">' + App.esc(p.department) + '</div>' +
+      '<div class="sid">' + App.esc(p.staffId) + '</div>';
+  }
+
+  function resetForm() {
+    clearTimeout(kioskTimer);
+    input.value = '';
+    resultPanel.classList.add('hidden');
+    formPanel.classList.remove('hidden');
+    input.focus();
+  }
+
+  loadEvent();
+  input.focus();
+</script>
+</body>
+</html>

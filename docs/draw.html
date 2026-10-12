@@ -1,0 +1,858 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lucky Draw</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/app.css">
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+<style>
+  body { overflow: hidden; }
+  .stage { position: relative; z-index: 1; height: 100vh; height: 100dvh; display: flex; flex-direction: column; padding: 16px 24px; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .topbar h1 { font-family: var(--display); font-size: clamp(20px, 3vw, 32px); font-weight: 800; line-height: 1.15; margin-top: 6px; }
+  .stage-main { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 340px; gap: 24px; padding-top: 12px; }
+  .wheel-area { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 0; }
+  .wheel-box { position: relative; width: min(66vh, 100%, 680px); aspect-ratio: 1; }
+  .wheel-box canvas { width: 100%; height: 100%; display: block; filter: drop-shadow(0 18px 50px rgba(0,0,0,.55)); }
+  .pointer {
+    position: absolute; top: -10px; left: 50%; width: 46px; height: 56px; margin-left: -23px; z-index: 3;
+    transform-origin: 50% 12px; transition: transform .12s ease-out;
+  }
+  .pointer.flick { transform: rotate(-18deg); transition: none; }
+  .hub {
+    position: absolute; left: 50%; top: 50%; width: 21%; aspect-ratio: 1; transform: translate(-50%, -50%);
+    border-radius: 50%; border: 5px solid #fff3c4; cursor: pointer; z-index: 2;
+    background: radial-gradient(circle at 35% 30%, #fff1b8, var(--gold) 45%, #d48a10);
+    color: #3a2600; font-family: var(--display); font-weight: 900; font-size: clamp(14px, 2.6vh, 26px); letter-spacing: 1px;
+    box-shadow: 0 6px 24px rgba(0,0,0,.45), inset 0 -4px 10px rgba(0,0,0,.2);
+    transition: transform .15s, filter .15s;
+  }
+  .hub:hover:not(:disabled) { transform: translate(-50%, -50%) scale(1.06); }
+  .hub:disabled { cursor: default; filter: saturate(.6) brightness(.9); }
+  .spin-btn { margin-top: 18px; font-size: clamp(16px, 2.2vh, 22px); padding: 14px 40px; border-radius: 100px; box-shadow: 0 10px 34px rgba(247,201,72,.25); }
+  .status { margin-top: 10px; color: var(--muted); font-size: 15px; min-height: 22px; text-align: center; }
+
+  .winners { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 18px; display: flex; flex-direction: column; min-height: 0; }
+  .winners h3 { font-family: var(--display); font-size: 18px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .winners ol { list-style: none; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 8px; }
+  .winners li { display: grid; grid-template-columns: 38px 1fr; gap: 10px; align-items: center; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; animation: fadeUp .4s ease both; }
+  .winners li.void { opacity: .4; }
+  .winners li.void .wid { text-decoration: line-through; }
+  .winners .no { width: 38px; height: 38px; border-radius: 10px; background: rgba(247,201,72,.14); color: var(--gold); display: flex; align-items: center; justify-content: center; font-family: var(--display); font-weight: 800; }
+  .winners .wid { font-family: ui-monospace, Menlo, monospace; font-weight: 800; font-size: 16px; letter-spacing: 1px; }
+  .winners .wname { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .empty { color: var(--muted); font-size: 14px; text-align: center; padding: 24px 0; }
+
+  /* Winner overlay */
+  .overlay { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(5,8,20,.82); backdrop-filter: blur(6px); }
+  .reveal { text-align: center; max-width: 900px; width: 100%; animation: pop .5s ease both; }
+  .reveal .congrats { font-family: var(--display); font-weight: 900; font-size: clamp(26px, 5vw, 54px); letter-spacing: 2px;
+    background: linear-gradient(135deg, #fff, var(--gold2) 40%, var(--gold)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .reveal .drawno { color: var(--muted); font-size: clamp(14px, 2vw, 20px); font-weight: 700; letter-spacing: 3px; text-transform: uppercase; margin-top: 6px; }
+  .reveal .bigid {
+    font-family: var(--display); font-weight: 900; font-size: clamp(56px, 14vw, 170px); line-height: 1; letter-spacing: 6px;
+    margin: 22px 0 14px; color: #fff; text-shadow: 0 0 40px rgba(247,201,72,.55), 0 6px 0 #b8860b;
+  }
+  .reveal .wn { font-family: var(--display); font-size: clamp(22px, 3.6vw, 40px); font-weight: 800; color: var(--gold2); }
+  .reveal .wd { color: var(--muted); font-size: clamp(15px, 2vw, 22px); margin-top: 4px; }
+  .announce { margin-top: 22px; display: inline-flex; align-items: center; gap: 10px; color: var(--gold2); font-weight: 700; font-size: 15px; min-height: 24px; }
+  .announce .bars { display: inline-flex; gap: 3px; align-items: flex-end; height: 18px; }
+  .announce .bars i { width: 4px; background: var(--gold); border-radius: 2px; animation: eq .8s ease-in-out infinite; }
+  .announce .bars i:nth-child(2) { animation-delay: .2s; } .announce .bars i:nth-child(3) { animation-delay: .4s; }
+  @keyframes eq { 0%,100% { height: 4px; } 50% { height: 18px; } }
+  .reveal .row { justify-content: center; margin-top: 28px; }
+
+  /* Settings drawer */
+  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(400px, 100%); z-index: 60; background: var(--surface); border-left: 1px solid var(--border); padding: 22px; overflow-y: auto; transform: translateX(100%); transition: transform .25s ease; }
+  .drawer.open { transform: none; box-shadow: -20px 0 60px rgba(0,0,0,.5); }
+  .drawer h2 { font-family: var(--display); font-size: 22px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
+  .drawer .group { border-top: 1px solid var(--border); padding-top: 16px; margin-top: 16px; }
+  .stat-line { display: flex; justify-content: space-between; font-size: 14px; padding: 4px 0; }
+  .stat-line b { font-family: var(--display); }
+
+  @media (max-width: 900px) {
+    body { overflow: auto; }
+    .stage { height: auto; min-height: 100vh; padding: 14px 16px; }
+    .stage-main { grid-template-columns: 1fr; }
+    .wheel-box { width: min(92vw, 560px); }
+    .winners { max-height: 420px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- PIN gate -->
+<div class="gate" id="pinGate">
+  <div class="gate-card panel">
+    <span class="badge">Lucky Draw</span>
+    <h1 class="title">Organiser PIN</h1>
+    <p class="muted">Enter the admin PIN to open the lucky draw.</p>
+    <form id="pinForm">
+      <input type="password" id="pinInput" inputmode="text" autocomplete="current-password" placeholder="••••••">
+      <div class="gate-error" id="pinError"></div>
+      <button class="btn gold block" type="submit">Open Lucky Draw</button>
+    </form>
+    <div class="gate-note" id="pinBackend"></div>
+  </div>
+</div>
+
+<div class="stage">
+  <header class="topbar">
+    <div>
+      <span class="badge">Lucky Draw · Cabutan Bertuah</span>
+      <h1 id="eventName">&nbsp;</h1>
+    </div>
+    <div class="row">
+      <span class="pill gold" id="progressPill">Draw 0 / 0</span>
+      <span class="pill grey" id="poolPill">0 in the draw</span>
+      <button class="btn ghost small" id="settingsBtn" type="button">⚙ Settings</button>
+      <button class="btn ghost small" id="fsBtn" type="button" title="Full screen">⛶ Full screen</button>
+    </div>
+  </header>
+
+  <main class="stage-main">
+    <section class="wheel-area">
+      <div class="wheel-box" id="wheelBox">
+        <svg class="pointer" id="pointer" viewBox="0 0 46 56" aria-hidden="true">
+          <defs><linearGradient id="pg" x1="0" x2="1"><stop offset="0" stop-color="#ffe08a"/><stop offset="1" stop-color="#d48a10"/></linearGradient></defs>
+          <path d="M23 54 L4 14 A20 20 0 1 1 42 14 Z" fill="url(#pg)" stroke="#fff3c4" stroke-width="3" stroke-linejoin="round"/>
+          <circle cx="23" cy="16" r="6" fill="#fff3c4"/>
+        </svg>
+        <canvas id="wheel"></canvas>
+        <button class="hub" id="hubBtn" type="button">SPIN</button>
+      </div>
+      <button class="btn gold spin-btn" id="spinBtn" type="button">🎡 Spin the wheel</button>
+      <div class="status" id="statusText"></div>
+    </section>
+
+    <aside class="winners">
+      <h3>Winners <span class="pill gold" id="winCount">0</span></h3>
+      <ol id="winnerList"><li class="empty" style="display:block;border:none;background:none">No winners yet</li></ol>
+    </aside>
+  </main>
+</div>
+
+<!-- Winner reveal -->
+<div class="overlay hidden" id="winnerOverlay">
+  <div class="reveal">
+    <div class="congrats">TAHNIAH! · CONGRATULATIONS!</div>
+    <div class="drawno" id="rvDrawNo">Lucky Draw #1</div>
+    <div class="bigid" id="rvId">000000</div>
+    <div class="wn" id="rvName"></div>
+    <div class="wd" id="rvDept"></div>
+    <div class="announce" id="announce"></div>
+    <div class="row">
+      <button class="btn gold" id="continueBtn" type="button">Continue</button>
+      <button class="btn ghost" id="againBtn" type="button">🔊 Announce again</button>
+      <button class="btn danger" id="voidBtn" type="button">Winner absent — void</button>
+    </div>
+  </div>
+</div>
+
+<!-- Organiser settings -->
+<div class="drawer" id="drawer">
+  <h2>Lucky draw settings <button class="btn ghost small" id="closeDrawer" type="button">✕</button></h2>
+
+  <label class="field"><span>Number of lucky draws (prizes)</span>
+    <div class="row" style="flex-wrap:nowrap">
+      <input type="number" id="drawCountInput" min="1" max="1000">
+      <button class="btn small" id="saveCountBtn" type="button">Save</button>
+    </div>
+  </label>
+
+  <label class="field"><span>Announcement language</span>
+    <select id="langSelect">
+      <option value="ms">Bahasa Melayu — "Nombor staf…"</option>
+      <option value="en">English — "Staff number…"</option>
+    </select>
+  </label>
+
+  <label class="field"><span>Announcement voice</span>
+    <select id="voiceSelect"><option value="">Automatic</option></select>
+  </label>
+
+  <label class="field"><span>Spin length</span>
+    <select id="spinLength">
+      <option value="short">Short (~6 s)</option>
+      <option value="normal" selected>Normal (~9 s)</option>
+      <option value="long">Long (~13 s)</option>
+    </select>
+  </label>
+
+  <label class="check"><input type="checkbox" id="soundToggle" checked> Drum roll &amp; sound effects</label>
+  <button class="btn ghost small" id="testSoundBtn" type="button">▶ Test sound &amp; voice</button>
+
+  <div class="group">
+    <div class="stat-line"><span class="muted">Eligible in the draw</span><b id="stPool">0</b></div>
+    <div class="stat-line"><span class="muted">Prizes drawn</span><b id="stDone">0</b></div>
+    <div class="stat-line"><span class="muted">Prizes left</span><b id="stLeft">0</b></div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn ghost small" id="refreshBtn" type="button">↻ Refresh participants</button>
+      <button class="btn ghost small" id="logoutBtn" type="button">Log out</button>
+    </div>
+    <p class="muted" style="font-size:12px;margin-top:14px">Only registered participants are in the draw. Each person can win once. Keyboard: press <b>Space</b> to spin.</p>
+  </div>
+</div>
+
+<script src="assets/app.js"></script>
+<script>
+// ============================================================
+// Sound: drum roll, crash and tick, synthesised with Web Audio
+// ============================================================
+var Sound = (function () {
+  var ctx, master, noise, timer, nextHit, rollStart, rollLength = 9, hand = 0;
+  var enabled = App.local('sound') !== 'off';
+
+  function init() {
+    if (!ctx) {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      ctx = new AC();
+      master = ctx.createGain();
+      master.gain.value = 0.9;
+      master.connect(ctx.destination);
+      var len = ctx.sampleRate;
+      noise = ctx.createBuffer(1, len, ctx.sampleRate);
+      var d = noise.getChannelData(0);
+      for (var i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    }
+    if (ctx.state === 'suspended') ctx.resume();
+  }
+
+  function snare(t, vol) {
+    var src = ctx.createBufferSource();
+    src.buffer = noise;
+    var bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass'; bp.frequency.value = 1700 + Math.random() * 500; bp.Q.value = 0.7;
+    var g = ctx.createGain();
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+    src.connect(bp); bp.connect(g); g.connect(master);
+    src.start(t, Math.random() * 0.8, 0.12);
+
+    var o = ctx.createOscillator();
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(200, t);
+    o.frequency.exponentialRampToValueAtTime(120, t + 0.05);
+    var og = ctx.createGain();
+    og.gain.setValueAtTime(vol * 0.45, t);
+    og.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+    o.connect(og); og.connect(master);
+    o.start(t); o.stop(t + 0.07);
+  }
+
+  function schedule() {
+    while (nextHit < ctx.currentTime + 0.12) {
+      var p = Math.min(1, (nextHit - rollStart) / rollLength);
+      var vol = (0.16 + 0.7 * p * p) * (hand++ % 2 ? 0.85 : 1);
+      snare(nextHit, vol);
+      nextHit += 1 / (16 + 6 * p) + (Math.random() - 0.5) * 0.006;
+    }
+  }
+
+  function startRoll(seconds) {
+    if (!enabled || !ctx) return;
+    stopRoll();
+    rollLength = seconds || 9;
+    rollStart = nextHit = ctx.currentTime + 0.05;
+    timer = setInterval(schedule, 25);
+    schedule();
+  }
+
+  function stopRoll() {
+    clearInterval(timer);
+    timer = null;
+  }
+
+  function crash() {
+    if (!enabled || !ctx) return;
+    var t = ctx.currentTime + 0.02;
+    // cymbal
+    var src = ctx.createBufferSource();
+    src.buffer = noise; src.loop = true;
+    var hp = ctx.createBiquadFilter();
+    hp.type = 'highpass'; hp.frequency.value = 4500;
+    var g = ctx.createGain();
+    g.gain.setValueAtTime(0.9, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 2.8);
+    src.connect(hp); hp.connect(g); g.connect(master);
+    src.start(t); src.stop(t + 2.9);
+    // bass drum
+    var o = ctx.createOscillator();
+    o.frequency.setValueAtTime(130, t);
+    o.frequency.exponentialRampToValueAtTime(40, t + 0.4);
+    var og = ctx.createGain();
+    og.gain.setValueAtTime(1, t);
+    og.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+    o.connect(og); og.connect(master);
+    o.start(t); o.stop(t + 0.65);
+    snare(t, 1);
+  }
+
+  function tick() {
+    if (!enabled || !ctx) return;
+    var t = ctx.currentTime;
+    var o = ctx.createOscillator();
+    o.type = 'square'; o.frequency.value = 1400;
+    var g = ctx.createGain();
+    g.gain.setValueAtTime(0.06, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.025);
+    o.connect(g); g.connect(master);
+    o.start(t); o.stop(t + 0.03);
+  }
+
+  function setEnabled(on) {
+    enabled = on;
+    App.local('sound', on ? 'on' : 'off');
+    if (!on) stopRoll();
+  }
+
+  return { init: init, startRoll: startRoll, stopRoll: stopRoll, crash: crash, tick: tick,
+           setEnabled: setEnabled, isEnabled: function () { return enabled; } };
+})();
+
+// ============================================================
+// Speech announcement (Web Speech API)
+// ============================================================
+var Voice = (function () {
+  var synth = window.speechSynthesis;
+  var voices = [];
+  var runId = 0;
+
+  function loadVoices() {
+    if (!synth) return;
+    voices = synth.getVoices();
+    var sel = document.getElementById('voiceSelect');
+    var saved = App.local('voice') || '';
+    sel.innerHTML = '<option value="">Automatic</option>' + voices
+      .filter(function (v) { return /^(ms|id|en)/i.test(v.lang); })
+      .map(function (v) {
+        return '<option value="' + App.esc(v.name) + '"' + (v.name === saved ? ' selected' : '') + '>' +
+          App.esc(v.name + ' (' + v.lang + ')') + '</option>';
+      }).join('');
+  }
+  if (synth) {
+    loadVoices();
+    if (synth.addEventListener) synth.addEventListener('voiceschanged', loadVoices);
+  }
+
+  function pick(lang) {
+    var saved = App.local('voice');
+    var byName = voices.find(function (v) { return v.name === saved; });
+    if (byName) return byName;
+    var prefs = lang === 'en' ? ['en-GB', 'en-US', 'en'] : ['ms', 'id', 'en'];
+    for (var i = 0; i < prefs.length; i++) {
+      var p = prefs[i].toLowerCase();
+      var match = voices.filter(function (v) { return v.lang.toLowerCase().replace('_', '-').indexOf(p) === 0; });
+      var google = match.find(function (v) { return /google/i.test(v.name); });
+      if (google || match[0]) return google || match[0];
+    }
+    return null;
+  }
+
+  // Safari needs speech to be started once inside a click
+  function unlock() {
+    if (!synth) return;
+    var u = new SpeechSynthesisUtterance(' ');
+    u.volume = 0;
+    synth.speak(u);
+  }
+
+  function text(staffId, lang) {
+    var digits = String(staffId).split('').join(', ');
+    return (lang === 'en' ? 'Staff number. ' : 'Nombor staf. ') + digits + '.';
+  }
+
+  function sayOnce(msg, lang) {
+    return new Promise(function (resolve) {
+      var u = new SpeechSynthesisUtterance(msg);
+      var v = pick(lang);
+      if (v) { u.voice = v; u.lang = v.lang; } else { u.lang = lang === 'en' ? 'en-GB' : 'ms-MY'; }
+      u.rate = 0.82;
+      var done = false;
+      function finish() { if (!done) { done = true; resolve(); } }
+      u.onend = finish;
+      u.onerror = finish;
+      setTimeout(finish, 15000); // some browsers never fire onend
+      synth.speak(u);
+    });
+  }
+
+  // Announce `times` times; onStep(i) is called before each one.
+  function announce(staffId, lang, times, onStep) {
+    if (!synth) { onStep(-1); return Promise.resolve(); }
+    var id = ++runId;
+    synth.cancel();
+    var msg = text(staffId, lang);
+    var chain = Promise.resolve();
+    for (var i = 0; i < times; i++) {
+      (function (n) {
+        chain = chain.then(function () {
+          if (id !== runId) return;
+          onStep(n);
+          return sayOnce(msg, lang).then(function () {
+            return new Promise(function (r) { setTimeout(r, 900); });
+          });
+        });
+      })(i);
+    }
+    return chain.then(function () { if (id === runId) onStep(-1); });
+  }
+
+  function stop() {
+    runId++;
+    if (synth) synth.cancel();
+  }
+
+  return { announce: announce, stop: stop, unlock: unlock, supported: !!synth };
+})();
+
+// ============================================================
+// Wheel
+// ============================================================
+var MAX_SEGMENTS = 40;
+var COLORS = [
+  ['#f7c948', '#2a1d00'], ['#7c5cff', '#ffffff'], ['#ff5d73', '#ffffff'],
+  ['#2bd99f', '#05261b'], ['#3fa7ff', '#ffffff'], ['#ff9f43', '#2a1600']
+];
+var SPIN = {
+  short:  { cruise: 1.0, turns: 3 },
+  normal: { cruise: 1.8, turns: 4 },
+  long:   { cruise: 3.0, turns: 7 }
+};
+var MAX_VEL = Math.PI * 2 * 2.2; // rad/s at full speed
+var TWO_PI = Math.PI * 2;
+
+var canvas = document.getElementById('wheel');
+var cx2d = canvas.getContext('2d');
+var labels = [];
+var angle = 0;
+var highlight = -1;
+var spinning = false;
+var lastPointerSeg = -1, lastTick = 0;
+
+function mod(a, n) { return ((a % n) + n) % n; }
+
+function shuffle(a) {
+  for (var i = a.length - 1; i > 0; i--) {
+    var j = Math.floor(Math.random() * (i + 1));
+    var t = a[i]; a[i] = a[j]; a[j] = t;
+  }
+  return a;
+}
+
+// Big events can have hundreds of names; the wheel shows a random
+// sample so the labels stay readable. The draw itself uses everyone.
+function buildLabels() {
+  labels = shuffle(state.pool.slice()).slice(0, MAX_SEGMENTS);
+  highlight = -1;
+  drawWheel();
+}
+
+function colorFor(i, n) {
+  var idx = i % COLORS.length;
+  if (n > 1 && i === n - 1 && idx === 0) idx = 2;
+  return COLORS[idx];
+}
+
+function resizeWheel() {
+  var size = canvas.clientWidth;
+  var dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(size * dpr);
+  canvas.height = Math.round(size * dpr);
+  cx2d.setTransform(dpr, 0, 0, dpr, 0, 0);
+  drawWheel();
+}
+
+function drawWheel(now) {
+  var size = canvas.clientWidth;
+  if (!size) return;
+  var c = cx2d, R = size / 2, cx = R, cy = R;
+  var rim = Math.max(10, size * 0.03);
+  var r = R - rim;
+  c.clearRect(0, 0, size, size);
+
+  // rim
+  var rg = c.createRadialGradient(cx, cy, r, cx, cy, R);
+  rg.addColorStop(0, '#8a5a00'); rg.addColorStop(0.5, '#f7c948'); rg.addColorStop(1, '#8a5a00');
+  c.beginPath(); c.arc(cx, cy, R - 1, 0, TWO_PI); c.fillStyle = rg; c.fill();
+
+  var n = labels.length;
+  if (n === 0) {
+    c.beginPath(); c.arc(cx, cy, r, 0, TWO_PI); c.fillStyle = '#172040'; c.fill();
+    c.fillStyle = '#8b94b8'; c.font = '600 ' + Math.round(size * 0.035) + 'px Outfit, sans-serif';
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText('No registered participants', cx, cy - size * 0.17);
+  } else {
+    var seg = TWO_PI / n;
+    for (var i = 0; i < n; i++) {
+      var start = angle + i * seg;
+      var col = colorFor(i, n);
+      c.beginPath();
+      c.moveTo(cx, cy);
+      c.arc(cx, cy, r, start, start + seg);
+      c.closePath();
+      c.fillStyle = col[0];
+      c.globalAlpha = highlight >= 0 && i !== highlight ? 0.35 : 1;
+      c.fill();
+      c.globalAlpha = 1;
+      if (n > 1) { c.strokeStyle = 'rgba(0,0,0,.18)'; c.lineWidth = 1.5; c.stroke(); }
+
+      // label
+      c.save();
+      c.translate(cx, cy);
+      c.rotate(start + seg / 2);
+      var fs = Math.max(9, Math.min(size * 0.045, r * seg * 0.55));
+      c.font = '800 ' + fs + 'px Outfit, sans-serif';
+      var maxW = r * 0.62;
+      while (c.measureText(labels[i]).width > maxW && fs > 8) {
+        fs -= 1;
+        c.font = '800 ' + fs + 'px Outfit, sans-serif';
+      }
+      c.fillStyle = col[1];
+      c.globalAlpha = highlight >= 0 && i !== highlight ? 0.5 : 1;
+      c.textAlign = 'right';
+      c.textBaseline = 'middle';
+      c.fillText(labels[i], r - rim * 0.9, 0);
+      c.restore();
+      c.globalAlpha = 1;
+    }
+    if (highlight >= 0) {
+      var hs = angle + highlight * seg;
+      c.beginPath(); c.moveTo(cx, cy); c.arc(cx, cy, r, hs, hs + seg); c.closePath();
+      c.strokeStyle = '#ffffff'; c.lineWidth = 5; c.stroke();
+    }
+  }
+
+  // light bulbs on the rim
+  var bulbs = 28, blink = spinning ? Math.floor((now || 0) / 110) % 2 : -1;
+  for (var b = 0; b < bulbs; b++) {
+    var a = b / bulbs * TWO_PI;
+    var on = blink === -1 || (b % 2 === blink);
+    c.beginPath();
+    c.arc(cx + Math.cos(a) * (R - rim / 2), cy + Math.sin(a) * (R - rim / 2), Math.max(2.5, rim * 0.22), 0, TWO_PI);
+    c.fillStyle = on ? '#fffbe6' : '#a87412';
+    c.shadowColor = on ? '#fff3c4' : 'transparent';
+    c.shadowBlur = on ? 8 : 0;
+    c.fill();
+    c.shadowBlur = 0;
+  }
+}
+
+function pointerTick(now) {
+  var n = labels.length;
+  if (n < 2) return;
+  var seg = TWO_PI / n;
+  var at = Math.floor(mod(-Math.PI / 2 - angle, TWO_PI) / seg);
+  if (at !== lastPointerSeg) {
+    lastPointerSeg = at;
+    if (now - lastTick > 45) {
+      lastTick = now;
+      Sound.tick();
+      var p = document.getElementById('pointer');
+      p.classList.add('flick');
+      requestAnimationFrame(function () { p.classList.remove('flick'); });
+    }
+  }
+}
+
+// ── Spin: accelerate → cruise while the server picks → decelerate onto the winner
+function spin() {
+  if (!canSpin()) return;
+  Sound.init();
+  Voice.unlock();
+  spinning = true;
+  highlight = -1;
+  updateUI();
+
+  var cfg = SPIN[document.getElementById('spinLength').value] || SPIN.normal;
+  var phase = 'accel', t0 = performance.now(), last = t0, vel = 0, result = null;
+  var decel = null;
+  Sound.startRoll(0.8 + cfg.cruise + (cfg.turns + 0.5) * 3 / 2.2);
+
+  App.post({ action: 'draw', pin: state.pin }).then(function (res) { result = res; })
+    .catch(function () { result = { success: false, message: 'Cannot reach the server. Check the connection and spin again.' }; });
+
+  function beginDecel() {
+    var n = labels.length, seg = TWO_PI / n, idx;
+    if (result.success) {
+      idx = labels.indexOf(result.winner.staffId);
+      if (idx < 0) { idx = Math.floor(Math.random() * n); labels[idx] = result.winner.staffId; }
+    } else {
+      idx = Math.floor(Math.random() * n);
+    }
+    var jitter = (Math.random() - 0.5) * seg * 0.6;
+    var target = -Math.PI / 2 - (idx + 0.5) * seg + jitter;
+    var dist = mod(target - angle, TWO_PI) + TWO_PI * cfg.turns;
+    // duration chosen so the ease-out starts at the current speed (no jolt)
+    decel = { from: angle, dist: dist, dur: 3 * dist / vel * 1000, start: performance.now(), idx: idx };
+  }
+
+  function frame(now) {
+    var dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    var elapsed = (now - t0) / 1000;
+
+    if (phase === 'accel') {
+      vel = MAX_VEL * Math.min(1, elapsed / 0.8);
+      angle += vel * dt;
+      if (elapsed >= 0.8) phase = 'cruise';
+    } else if (phase === 'cruise') {
+      angle += vel * dt;
+      if (elapsed > 30 && !result) result = { success: false, message: 'The server is taking too long. Check the Admin page before spinning again.' };
+      if (result && elapsed >= 0.8 + cfg.cruise) { beginDecel(); phase = 'decel'; }
+    } else {
+      var p = Math.min(1, (now - decel.start) / decel.dur);
+      angle = decel.from + decel.dist * (1 - Math.pow(1 - p, 3));
+      if (p >= 1) {
+        drawWheel(now);
+        finishSpin(result, decel.idx);
+        return;
+      }
+    }
+    pointerTick(now);
+    drawWheel(now);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}
+
+function finishSpin(res, idx) {
+  spinning = false;
+  Sound.stopRoll();
+  angle = mod(angle, TWO_PI);
+
+  if (!res.success) {
+    drawWheel();
+    App.toast(res.message || 'Draw failed.', 'error');
+    if (res.auth === false) { App.logout(); return; }
+    loadState();
+    return;
+  }
+
+  Sound.crash();
+  highlight = idx;
+  drawWheel();
+  celebrate();
+
+  var w = res.winner;
+  state.validCount = res.validCount;
+  state.winners.push({ drawNo: w.drawNo, staffId: w.staffId, name: w.name, department: w.department, status: 'WON' });
+  state.pool = state.pool.filter(function (id) { return id !== w.staffId; });
+  state.current = w;
+  updateUI();
+  setTimeout(function () { showWinner(w); }, 900);
+}
+
+function celebrate() {
+  if (typeof confetti !== 'function') return;
+  var colors = ['#f7c948', '#ffe08a', '#7c5cff', '#ff5d73', '#2bd99f', '#ffffff'];
+  confetti({ particleCount: 160, spread: 90, origin: { y: 0.55 }, colors: colors, zIndex: 80 });
+  setTimeout(function () { confetti({ particleCount: 90, angle: 60, spread: 70, origin: { x: 0, y: 0.7 }, colors: colors, zIndex: 80 }); }, 300);
+  setTimeout(function () { confetti({ particleCount: 90, angle: 120, spread: 70, origin: { x: 1, y: 0.7 }, colors: colors, zIndex: 80 }); }, 500);
+}
+
+// ============================================================
+// Winner overlay & announcement
+// ============================================================
+var overlay = document.getElementById('winnerOverlay');
+var announceEl = document.getElementById('announce');
+var ANNOUNCE_TIMES = 3;
+
+function showWinner(w) {
+  document.getElementById('rvDrawNo').textContent = 'Lucky Draw #' + w.drawNo + ' of ' + state.event.drawCount;
+  document.getElementById('rvId').textContent = w.staffId;
+  document.getElementById('rvName').textContent = w.name;
+  document.getElementById('rvDept').textContent = w.department;
+  overlay.classList.remove('hidden');
+  setTimeout(function () { announceWinner(w); }, 700);
+}
+
+function announceWinner(w) {
+  Voice.announce(w.staffId, state.event.announceLang, ANNOUNCE_TIMES, function (i) {
+    if (i < 0) {
+      announceEl.innerHTML = Voice.supported ? '' : 'Voice announcement is not supported in this browser.';
+      return;
+    }
+    announceEl.innerHTML = '<span class="bars"><i></i><i></i><i></i></span> Announcing ' + (i + 1) + ' / ' + ANNOUNCE_TIMES;
+  });
+}
+
+function closeWinner() {
+  Voice.stop();
+  announceEl.innerHTML = '';
+  overlay.classList.add('hidden');
+  state.current = null;
+  buildLabels();
+  updateUI();
+}
+
+document.getElementById('continueBtn').addEventListener('click', closeWinner);
+document.getElementById('againBtn').addEventListener('click', function () {
+  if (state.current) announceWinner(state.current);
+});
+document.getElementById('voidBtn').addEventListener('click', function () {
+  var w = state.current;
+  if (!w) return;
+  if (!confirm('Void draw #' + w.drawNo + ' for ' + w.staffId + ' (' + w.name + ')?\n\nThis person will not be drawn again. The prize goes back into the draw.')) return;
+  var btn = this;
+  btn.disabled = true;
+  App.post({ action: 'voidWinner', pin: state.pin, staffId: w.staffId }).then(function (res) {
+    btn.disabled = false;
+    if (!res.success) { App.toast(res.message || 'Could not void.', 'error'); return; }
+    state.winners.forEach(function (x) { if (x.staffId === w.staffId) x.status = 'VOID'; });
+    state.validCount = Math.max(0, state.validCount - 1);
+    App.toast('Draw #' + w.drawNo + ' voided. Spin again for this prize.', 'ok');
+    closeWinner();
+  }).catch(function () {
+    btn.disabled = false;
+    App.toast('Cannot reach the server.', 'error');
+  });
+});
+
+// ============================================================
+// State & UI
+// ============================================================
+var state = { pin: null, event: { drawCount: 0, announceLang: 'ms' }, winners: [], validCount: 0, pool: [], current: null };
+
+function canSpin() {
+  return !spinning && !state.current && state.pool.length > 0 && state.validCount < state.event.drawCount;
+}
+
+function updateUI() {
+  var total = state.event.drawCount;
+  var done = state.validCount;
+  document.getElementById('eventName').textContent = state.event.name || '';
+  document.getElementById('progressPill').textContent = 'Draw ' + done + ' / ' + total;
+  document.getElementById('poolPill').textContent = state.pool.length + ' in the draw';
+  document.getElementById('stPool').textContent = state.pool.length;
+  document.getElementById('stDone').textContent = done;
+  document.getElementById('stLeft').textContent = Math.max(0, total - done);
+
+  var ok = canSpin();
+  document.getElementById('spinBtn').disabled = !ok;
+  document.getElementById('hubBtn').disabled = !ok;
+
+  var status;
+  if (spinning) status = '🥁 Spinning…';
+  else if (done >= total && total > 0) status = '🎉 All ' + total + ' lucky draws are complete. Thank you!';
+  else if (!total) status = 'Set the number of lucky draws in ⚙ Settings.';
+  else if (!state.pool.length) status = 'No eligible participants. Registered participants appear here.';
+  else status = 'Ready for lucky draw #' + (done + 1) + ' of ' + total;
+  document.getElementById('statusText').textContent = status;
+
+  var list = document.getElementById('winnerList');
+  var winners = state.winners.slice().reverse();
+  document.getElementById('winCount').textContent = done;
+  list.innerHTML = winners.length ? winners.map(function (w) {
+    return '<li class="' + (w.status === 'VOID' ? 'void' : '') + '">' +
+      '<div class="no">' + w.drawNo + '</div>' +
+      '<div><div class="wid">' + App.esc(w.staffId) + (w.status === 'VOID' ? ' <span class="pill red">VOID</span>' : '') + '</div>' +
+      '<div class="wname">' + App.esc(w.name) + (w.department ? ' · ' + App.esc(w.department) : '') + '</div></div></li>';
+  }).join('') : '<li class="empty" style="display:block;border:none;background:none">No winners yet</li>';
+}
+
+function loadState() {
+  return App.post({ action: 'drawState', pin: state.pin }).then(function (res) {
+    if (!res.success) {
+      if (res.auth === false) App.logout();
+      App.toast(res.message || 'Could not load.', 'error');
+      return;
+    }
+    state.event = res.event;
+    state.winners = res.winners;
+    state.validCount = res.validCount;
+    state.pool = res.pool;
+    document.getElementById('drawCountInput').value = res.event.drawCount;
+    document.getElementById('langSelect').value = res.event.announceLang;
+    document.title = 'Lucky Draw · ' + (res.event.name || 'Event');
+    if (!spinning) buildLabels();
+    updateUI();
+  }).catch(function () {
+    App.toast('Cannot reach the server.', 'error');
+  });
+}
+
+// ── Controls ─────────────────────────────────────────────────
+document.getElementById('spinBtn').addEventListener('click', spin);
+document.getElementById('hubBtn').addEventListener('click', spin);
+document.addEventListener('keydown', function (e) {
+  if (e.target.matches('input, select, textarea, button')) return;
+  if ((e.code === 'Space' || e.key === 'Enter') && overlay.classList.contains('hidden') && !drawer.classList.contains('open')) {
+    e.preventDefault();
+    spin();
+  }
+});
+
+var drawer = document.getElementById('drawer');
+document.getElementById('settingsBtn').addEventListener('click', function () { drawer.classList.add('open'); });
+document.getElementById('closeDrawer').addEventListener('click', function () { drawer.classList.remove('open'); });
+
+document.getElementById('fsBtn').addEventListener('click', function () {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen();
+});
+
+document.getElementById('saveCountBtn').addEventListener('click', function () {
+  var btn = this, n = Number(document.getElementById('drawCountInput').value);
+  btn.disabled = true;
+  App.post({ action: 'setDrawCount', pin: state.pin, count: n }).then(function (res) {
+    btn.disabled = false;
+    if (!res.success) { App.toast(res.message, 'error'); return; }
+    state.event = res.event;
+    updateUI();
+    App.toast('Number of lucky draws set to ' + res.event.drawCount + '.', 'ok');
+  }).catch(function () { btn.disabled = false; App.toast('Cannot reach the server.', 'error'); });
+});
+
+document.getElementById('langSelect').addEventListener('change', function () {
+  var lang = this.value;
+  state.event.announceLang = lang;
+  App.post({ action: 'saveSettings', pin: state.pin, announceLang: lang }).then(function (res) {
+    App.toast(res.success ? 'Announcement language saved.' : res.message, res.success ? 'ok' : 'error');
+  }).catch(function () { App.toast('Cannot reach the server.', 'error'); });
+});
+
+document.getElementById('voiceSelect').addEventListener('change', function () { App.local('voice', this.value || null); });
+
+var spinLength = document.getElementById('spinLength');
+spinLength.value = App.local('spinLength') || 'normal';
+spinLength.addEventListener('change', function () { App.local('spinLength', this.value); });
+
+var soundToggle = document.getElementById('soundToggle');
+soundToggle.checked = Sound.isEnabled();
+soundToggle.addEventListener('change', function () { Sound.setEnabled(this.checked); });
+
+document.getElementById('testSoundBtn').addEventListener('click', function () {
+  Sound.init();
+  Voice.unlock();
+  Sound.startRoll(2);
+  setTimeout(function () {
+    Sound.stopRoll();
+    Sound.crash();
+    Voice.announce('123456', state.event.announceLang, 1, function () {});
+  }, 2000);
+});
+
+document.getElementById('refreshBtn').addEventListener('click', function () {
+  loadState().then(function () { App.toast('Participants refreshed.', 'ok'); });
+});
+document.getElementById('logoutBtn').addEventListener('click', App.logout);
+
+window.addEventListener('resize', resizeWheel);
+
+// ── Start ────────────────────────────────────────────────────
+App.pinGate(function (pin) {
+  state.pin = pin;
+  (document.fonts ? document.fonts.ready : Promise.resolve()).then(function () {
+    resizeWheel();
+    loadState();
+  });
+});
+resizeWheel();
+</script>
+</body>
+</html>
