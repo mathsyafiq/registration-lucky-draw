@@ -109,7 +109,7 @@
       </div>
       <div class="stats">
         <div class="stat"><div class="k">Pax present now</div><div class="v gold" id="hcPax">0</div><div class="s">staff + family</div></div>
-        <div class="stat"><div class="k">Staff present</div><div class="v" id="hcStaff">0</div></div>
+        <div class="stat"><div class="k">Staff present</div><div class="v" id="hcStaff">0</div><div class="s" id="hcStaffSub"></div></div>
         <div class="stat"><div class="k">Family present</div><div class="v" id="hcFam">0</div><div class="s" id="hcFamSub"></div></div>
         <div class="stat"><div class="k">Expected pax</div><div class="v" id="hcExp">0</div><div class="s" id="hcExpSub"></div></div>
       </div>
@@ -142,6 +142,7 @@
           <option value="yes">Registered</option>
           <option value="no">Not registered</option>
           <option value="walkin">Walk-in only</option>
+          <option value="spouse">Staff spouses</option>
         </select>
         <button class="btn ghost small" id="reloadParts" type="button">↻ Reload</button>
         <button class="btn ghost small" id="exportParts" type="button">⬇ Export CSV</button>
@@ -340,7 +341,7 @@ function renderOverview(d) {
   document.getElementById('recentList').innerHTML = d.recent.length ? d.recent.map(function (r) {
     return '<li><div class="who"><div><b class="mono">' + App.esc(r.staffId) + '</b> · ' + App.esc(r.name) + '</div>' +
       '<div>' + App.esc(r.department) + '</div></div><div class="t">' + App.esc(r.time) +
-      (r.method === 'Manual' ? '<br>manual' : r.method === 'Walk-in' ? '<br>walk-in' : '') + '</div></li>';
+      (r.method === 'Manual' ? '<br>manual' : r.method === 'Walk-in' ? '<br>walk-in' : r.method === 'Spouse' ? '<br>spouse' : '') + '</div></li>';
   }).join('') : '<p class="muted">No registrations yet.</p>';
 }
 
@@ -370,9 +371,10 @@ function renderHeadcount(h) {
   document.getElementById('hcPax').textContent = h.paxPresent;
   document.getElementById('hcStaff').textContent = h.staffPresent;
   document.getElementById('hcFam').textContent = h.familyPresent;
-  document.getElementById('hcFamSub').textContent = !h.unconfirmed ? 'all confirmed at check-in' : h.familyEstimated
-    ? h.familyConfirmed + ' confirmed · ' + h.familyEstimated + ' estimated from survey (' + h.unconfirmed + ' staff not confirmed)'
-    : h.unconfirmed + ' staff have not confirmed their family number';
+  document.getElementById('hcStaffSub').textContent = h.spousesPresent ? 'incl. ' + h.spousesPresent + ' staff spouse' + (h.spousesPresent === 1 ? '' : 's') : '';
+  document.getElementById('hcFamSub').textContent = !h.unconfirmed ? 'all groups confirmed at check-in' : h.familyEstimated
+    ? 'incl. ' + h.familyEstimated + ' estimated from the survey (' + h.unconfirmed + ' staff not confirmed)'
+    : h.unconfirmed + ' staff have not confirmed their group yet';
   document.getElementById('hcExp').textContent = h.paxExpected;
   document.getElementById('hcExpSub').textContent = h.staffExpected + ' staff + ' + h.familyExpected + ' family · ' +
     h.surveyed + ' survey answers';
@@ -410,6 +412,7 @@ function filteredParticipants() {
     if (f === 'yes' && !p.registered) return false;
     if (f === 'no' && p.registered) return false;
     if (f === 'walkin' && p.method !== 'Walk-in') return false;
+    if (f === 'spouse' && !p.linkedTo) return false;
     if (!q) return true;
     return (p.staffId + ' ' + p.name + ' ' + p.department).toLowerCase().indexOf(q) >= 0;
   });
@@ -425,10 +428,10 @@ function renderParticipants() {
   document.getElementById('partBody').innerHTML = list.slice(0, MAX_ROWS).map(function (p) {
     return '<tr><td class="mono">' + App.esc(p.staffId) + '</td><td>' + App.esc(p.name) + '</td><td>' + App.esc(p.department) + '</td>' +
       '<td>' + (p.registered ? '<span class="pill green">Registered</span>' : '<span class="pill grey">Not yet</span>') + '</td>' +
-      '<td class="muted" style="font-size:12px;white-space:nowrap">' + fmtTime(p.registeredAt) + (p.method === 'Manual' ? ' · manual' : p.method === 'Walk-in' ? ' · <span class="pill gold">Walk-in</span>' : '') + '</td>' +
+      '<td class="muted" style="font-size:12px;white-space:nowrap">' + fmtTime(p.registeredAt) + (p.linkedTo ? ' · <span class="pill gold">Spouse of ' + App.esc(p.linkedTo) + '</span>' : p.method === 'Manual' ? ' · manual' : p.method === 'Walk-in' ? ' · <span class="pill gold">Walk-in</span>' : '') + '</td>' +
       '<td style="white-space:nowrap">' + familyCell(p) + '</td>' +
       '<td style="text-align:right">' + (p.registered
-        ? '<button class="btn ghost small" data-act="family" data-id="' + App.esc(p.staffId) + '">Group</button> ' +
+        ? (p.linkedTo ? '' : '<button class="btn ghost small" data-act="family" data-id="' + App.esc(p.staffId) + '">Group</button> ') +
           '<button class="btn ghost small" data-act="unregister" data-id="' + App.esc(p.staffId) + '">Undo</button>'
         : '<button class="btn small" data-act="manualRegister" data-id="' + App.esc(p.staffId) + '">Register</button>') +
       '</td></tr>';
@@ -438,6 +441,7 @@ function renderParticipants() {
 // Present (confirmed at check-in) and the survey number
 // Group total including the staff member (the sheet stores family only)
 function familyCell(p) {
+  if (p.linkedTo) return '<span class="muted" style="font-size:12px">in ' + App.esc(p.linkedTo) + '\'s group</span>';
   var out = p.familyPresent != null ? '<b>' + (p.familyPresent + 1) + '</b>' : '<span class="muted">–</span>';
   if (p.familyExpected != null) out += ' <span class="muted" style="font-size:12px">/ survey ' + (p.familyExpected + 1) + '</span>';
   return out;
@@ -481,11 +485,11 @@ document.getElementById('search').addEventListener('input', renderParticipants);
 document.getElementById('filter').addEventListener('change', renderParticipants);
 document.getElementById('reloadParts').addEventListener('click', loadParticipants);
 document.getElementById('exportParts').addEventListener('click', function () {
-  var rows = [['Staff ID', 'Name', 'Department', 'Status', 'Registered At', 'Method', 'Family (Survey)', 'Family (Present)', 'Food total (incl. staff)']].concat(
+  var rows = [['Staff ID', 'Name', 'Department', 'Status', 'Registered At', 'Method', 'Family (Survey)', 'Family (Present)', 'Food total (incl. staff)', 'Spouse Of']].concat(
     (state.participants || []).map(function (p) {
       return [p.staffId, p.name, p.department, p.registered ? 'Registered' : '', fmtTime(p.registeredAt), p.method,
         p.familyExpected != null ? p.familyExpected : '', p.familyPresent != null ? p.familyPresent : '',
-        p.familyPresent != null ? p.familyPresent + 1 : ''];
+        p.linkedTo ? '' : p.familyPresent != null ? p.familyPresent + 1 : '', p.linkedTo || ''];
     }));
   downloadCsv(rows, fileBase() + ' - attendance.csv');
 });

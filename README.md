@@ -64,6 +64,16 @@ Your site will be at `https://<user>.github.io/<repo>/`.
      pre-filled from the survey, adjust it if needed and tap **Confirm**. The page then shows
      **"Please collect your food — Total N"**; scanning again later shows the same prompt (handy at the food counter).
      Admins can correct it in **Admin → Participants → Group**. The sheet stores family members (group total − 1).
+   - **Staff spouses:** the survey is answered by the head of family, and their total includes a spouse who is also
+     staff. To put that spouse in the lucky draw without counting their food twice, either
+     - the head taps **Add my spouse** under the food total and enters the spouse's Staff ID, name and department, or
+     - the spouse scans the QR, and since their ID isn't on the list, taps **My spouse already registered our family**
+       and enters the head's Staff ID.
+
+     The spouse gets a row in Participants with **Spouse Of** (column I) set to the head's Staff ID. They are in the
+     lucky draw and counted as staff present, but not again for food or in the expected total. If the spouse arrives
+     before the head, they count as 1 person until the head registers. "Start new event" with *Keep the same
+     participant list* removes these spouse rows.
    - **Food committee:** **Admin → Overview → Copy link for food committee** gives a live headcount page
      (`headcount.html`, refreshes every 15 s, numbers only). Staff who registered but didn't confirm are counted with
      their survey number as an estimate; the page says how many are estimated.

@@ -46,7 +46,7 @@
   </div>
 
   <div class="tiles">
-    <div class="tile"><div class="k">Staff present</div><div class="v" id="staff">–</div><div class="s">Staf hadir</div></div>
+    <div class="tile"><div class="k">Staff present</div><div class="v" id="staff">–</div><div class="s" id="staffSub">Staf hadir</div></div>
     <div class="tile"><div class="k">Family present</div><div class="v" id="family">–</div><div class="s">Ahli keluarga hadir</div></div>
     <div class="tile"><div class="k">Expected total</div><div class="v" id="expected">–</div><div class="s" id="expSub">Jangkaan (kaji selidik)</div></div>
   </div>
@@ -66,6 +66,7 @@
       document.title = 'Headcount · ' + (res.event.name || 'Event');
       document.getElementById('pax').textContent = h.paxPresent;
       document.getElementById('staff').textContent = h.staffPresent;
+      document.getElementById('staffSub').textContent = 'Staf hadir' + (h.spousesPresent ? ' · incl. ' + h.spousesPresent + ' staff spouse' + (h.spousesPresent === 1 ? '' : 's') : '');
       document.getElementById('family').textContent = h.familyPresent;
       document.getElementById('expected').textContent = h.paxExpected;
       document.getElementById('expSub').textContent = h.staffExpected + ' staff + ' + h.familyExpected + ' family';
@@ -74,8 +75,8 @@
       document.getElementById('pct').textContent = pct + '% of expected';
       document.getElementById('expLbl').textContent = 'Expected ' + h.paxExpected;
       document.getElementById('note').textContent = !h.unconfirmed ? '' : h.familyEstimated
-        ? h.familyEstimated + ' family members are estimated from the survey (' + h.unconfirmed + ' staff have not confirmed yet).'
-        : h.unconfirmed + ' staff have not confirmed their family number yet.';
+        ? h.familyEstimated + ' people are estimated from the survey (' + h.unconfirmed + ' staff have not confirmed their group yet).'
+        : h.unconfirmed + ' staff have not confirmed their group yet.';
       document.getElementById('foot').textContent = 'Updated ' + h.updated + ' · refreshes every 15 seconds';
     }).catch(function () {
       document.getElementById('foot').textContent = 'Connection problem, retrying…';

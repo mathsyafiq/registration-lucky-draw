@@ -13,7 +13,7 @@ const SHEETS = {
 
 const HEADERS = {
   Settings:     ["Key", "Value", "Notes"],
-  Participants: ["Staff ID", "Name", "Department", "Status", "Registered At", "Method", "Family (Survey)", "Family (Present)"],
+  Participants: ["Staff ID", "Name", "Department", "Status", "Registered At", "Method", "Family (Survey)", "Family (Present)", "Spouse Of"],
   Winners:      ["Draw No", "Staff ID", "Name", "Department", "Drawn At", "Status"],
   Departments:  ["Department"]
 };
@@ -22,7 +22,8 @@ const REGISTERED = "Registered";
 const WON = "WON";
 const VOID = "VOID";
 const WALK_IN = "Walk-in";
-const P_COLS = 8;     // Participants columns A–H
+const P_COLS = 9;     // Participants columns A–I
+const SPOUSE = "Spouse";
 const FAMILY_MAX = 50;
 
 // ── JSON helper ──────────────────────────────────────────────
@@ -65,6 +66,8 @@ function doPost(e) {
 // Actions anyone can call
 const PUBLIC_ACTIONS = {
   register:    function (b) { return registerParticipant(b.staffId, "QR"); },
+  addSpouse:      function (b) { return linkSpouse(b.staffId, b.spouseId, b.name, b.department, true); },
+  registerSpouse: function (b) { return linkSpouse(b.headId, b.staffId, b.name, b.department, false); },
   registerNew: function (b) { return registerNew(b); },
   setFamily:   function (b) { return setFamily(b.staffId, b.count); }
 };
@@ -227,7 +230,7 @@ function idKey(v) {
 
 function readParticipants() {
   const sheet = getSheet(SHEETS.participants);
-  ensureFamilyHeaders(sheet);
+  ensureExtraHeaders(sheet);
   const last = sheet.getLastRow();
   if (last < 2) return [];
   const data = sheet.getRange(2, 1, last - 1, P_COLS).getValues();
@@ -244,7 +247,8 @@ function readParticipants() {
       registeredAt: r[4] instanceof Date ? r[4] : null,
       method:       String(r[5]).trim(),
       familyExpected: parseFamily(r[6]),
-      familyPresent:  parseFamily(r[7])
+      familyPresent:  parseFamily(r[7]),
+      linkedTo:       String(r[8]).trim()    // head of family's Staff ID, for a staff spouse
     });
   }
   return list;
@@ -257,16 +261,18 @@ function parseFamily(v) {
   return m ? Math.min(FAMILY_MAX, Number(m[0])) : null;
 }
 
-// Older sheets were created before the family columns existed
-function ensureFamilyHeaders(sheet) {
+// Older sheets were created before the family / spouse columns existed
+function ensureExtraHeaders(sheet) {
   const cache = CacheService.getScriptCache();
-  if (cache.get("familyHeaders")) return;
-  const h = sheet.getRange(1, 7, 1, 2);
-  if (String(h.getValues()[0][0]).trim() === "") {
-    h.setValues([[HEADERS.Participants[6], HEADERS.Participants[7]]]);
-    h.setBackground("#1a1a2e").setFontColor("#ffffff").setFontWeight("bold");
+  if (cache.get("extraHeaders")) return;
+  const range = sheet.getRange(1, 7, 1, 3);
+  const current = range.getValues()[0];
+  const wanted = HEADERS.Participants.slice(6, 9);
+  if (current.some(function (v) { return String(v).trim() === ""; })) {
+    range.setValues([wanted.map(function (h, i) { return String(current[i]).trim() || h; })]);
+    range.setBackground("#1a1a2e").setFontColor("#ffffff").setFontWeight("bold");
   }
-  cache.put("familyHeaders", "1", 21600);
+  cache.put("extraHeaders", "1", 21600);
 }
 
 function publicParticipant(p) {
@@ -278,7 +284,8 @@ function publicParticipant(p) {
     registeredAt: p.registeredAt ? p.registeredAt.getTime() : null,
     method:       p.method,
     familyExpected: p.familyExpected,
-    familyPresent:  p.familyPresent
+    familyPresent:  p.familyPresent,
+    linkedTo:       p.linkedTo
   };
 }
 
@@ -296,24 +303,33 @@ function registerParticipant(staffId, method) {
   const sheet = getSheet(SHEETS.participants);
   const last = sheet.getLastRow();
   if (last >= 2) {
-    const ids = sheet.getRange(2, 1, last - 1, 1).getValues();
-    for (let i = 0; i < ids.length; i++) {
-      if (idKey(ids[i][0]) !== key) continue;
+    const data = sheet.getRange(2, 1, last - 1, P_COLS).getValues();
+    for (let i = 0; i < data.length; i++) {
+      if (idKey(data[i][0]) !== key) continue;
 
       const row = i + 2;
-      const rec = sheet.getRange(row, 1, 1, P_COLS).getValues()[0];
+      const rec = data[i];
       const participant = {
         staffId:        String(rec[0]).trim(),
         name:           String(rec[1]).trim(),
         department:     String(rec[2]).trim(),
         familyExpected: parseFamily(rec[6]),
-        familyPresent:  parseFamily(rec[7])
+        familyPresent:  parseFamily(rec[7]),
+        linkedTo:       String(rec[8]).trim(),
+        linkedName:     "",
+        spouses:        []
       };
+      data.forEach(function (r) {
+        if (participant.linkedTo && idKey(r[0]) === idKey(participant.linkedTo)) participant.linkedName = String(r[1]).trim();
+        if (idKey(r[8]) === key && String(r[3]).trim() === REGISTERED) {
+          participant.spouses.push({ staffId: String(r[0]).trim(), name: String(r[1]).trim() });
+        }
+      });
       if (String(rec[3]).trim() === REGISTERED) {
         return { success: true, already: true, participant: participant, registeredAt: formatTime(rec[4]) };
       }
       const now = new Date();
-      sheet.getRange(row, 4, 1, 3).setValues([[REGISTERED, now, method]]);
+      sheet.getRange(row, 4, 1, 3).setValues([[REGISTERED, now, participant.linkedTo ? SPOUSE : method]]);
       return { success: true, already: false, participant: participant, registeredAt: formatTime(now) };
     }
   }
@@ -352,7 +368,7 @@ function setFamily(staffId, count) {
       if (String(sheet.getRange(row, 4).getValue()).trim() !== REGISTERED) {
         return { success: false, message: "Please register first." };
       }
-      ensureFamilyHeaders(sheet);
+      ensureExtraHeaders(sheet);
       sheet.getRange(row, 8).setValue(n);
       return { success: true, familyPresent: n };
     }
@@ -392,13 +408,84 @@ function registerNew(b) {
     const sheet = getSheet(SHEETS.participants);
     const row = sheet.getLastRow() + 1;
     sheet.getRange(row, 1).setNumberFormat("@");
-    ensureFamilyHeaders(sheet);
-    sheet.getRange(row, 1, 1, P_COLS).setValues([[id, name, dept, REGISTERED, now, WALK_IN, "", family]]);
+    ensureExtraHeaders(sheet);
+    sheet.getRange(row, 1, 1, P_COLS).setValues([[id, name, dept, REGISTERED, now, WALK_IN, "", family, ""]]);
     return {
       success: true,
       already: false,
       walkIn: true,
-      participant: { staffId: id, name: name, department: dept, familyExpected: null, familyPresent: family },
+      participant: { staffId: id, name: name, department: dept, familyExpected: null, familyPresent: family, linkedTo: "", spouses: [] },
+      registeredAt: formatTime(now)
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ── Staff spouse ─────────────────────────────────────────────
+// The head of family's survey total already includes the spouse, so the
+// spouse is linked to the head: in the lucky draw, but not counted again
+// for food. byHead = true when the head adds the spouse at check-in;
+// false when the spouse registers themselves.
+function linkSpouse(headId, spouseId, name, department, byHead) {
+  const hKey = idKey(headId), sKey = idKey(spouseId);
+  name = String(name || "").trim().replace(/\s+/g, " ").slice(0, 150);
+  department = String(department || "").trim().slice(0, 150);
+  if (!hKey || !sKey) return { success: false, message: "Please enter both Staff IDs." };
+  if (hKey === sKey) return { success: false, message: "The spouse's Staff ID must be different." };
+  if (!isTrue(getSetting("RegistrationOpen"))) return { success: false, closed: true, message: "Registration is closed." };
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(15000)) return { success: false, message: "System is busy. Please try again." };
+  try {
+    const ps = readParticipants();
+    const find = function (k) { return ps.find(function (p) { return idKey(p.staffId) === k; }); };
+    const head = find(hKey);
+    if (!head) return { success: false, message: byHead ? "Staff ID not found." : "Your spouse's Staff ID is not in the participant list. Please check it, or register as a new participant." };
+    if (head.linkedTo) return { success: false, message: head.staffId + " is registered as a spouse of " + head.linkedTo + ". Please use that Staff ID." };
+    if (byHead && !head.registered) return { success: false, message: "Please register first." };
+
+    const sheet = getSheet(SHEETS.participants);
+    const now = new Date();
+    let spouse = find(sKey);
+    if (spouse) {
+      if (spouse.linkedTo && idKey(spouse.linkedTo) !== hKey) {
+        return { success: false, message: spouse.staffId + " is already registered with another family. Please see the registration counter." };
+      }
+      if (ps.some(function (p) { return idKey(p.linkedTo) === sKey; })) {
+        return { success: false, message: spouse.staffId + " has registered their own family. Please see the registration counter." };
+      }
+      sheet.getRange(spouse.row, 4, 1, 3).setValues([[REGISTERED, spouse.registeredAt || now, spouse.registered ? spouse.method : SPOUSE]]);
+      sheet.getRange(spouse.row, 9).setValue(head.staffId);
+      spouse = { staffId: spouse.staffId, name: spouse.name, department: spouse.department };
+    } else {
+      if (!name) return { success: false, message: byHead ? "Please enter your spouse's full name." : "Please enter your full name." };
+      if (!department) return { success: false, message: "Please choose a department." };
+      const depts = getDepartmentList();
+      if (depts.list.length && depts.list.indexOf(department) === -1) {
+        return { success: false, message: "Please choose a department from the list." };
+      }
+      const id = String(spouseId).trim().slice(0, 40);
+      const row = sheet.getLastRow() + 1;
+      sheet.getRange(row, 1).setNumberFormat("@");
+      sheet.getRange(row, 9).setNumberFormat("@");
+      sheet.getRange(row, 1, 1, P_COLS).setValues([[id, name, department, REGISTERED, now, SPOUSE, "", "", head.staffId]]);
+      spouse = { staffId: id, name: name, department: department };
+    }
+
+    // The head's confirmed group must include every linked spouse
+    const linked = ps.filter(function (p) {
+      return idKey(p.linkedTo) === hKey && p.registered && idKey(p.staffId) !== sKey;
+    }).length + 1;
+    let headFamily = head.familyPresent;
+    if (head.registered && headFamily !== null && headFamily < linked) {
+      headFamily = linked;
+      sheet.getRange(head.row, 8).setValue(headFamily);
+    }
+    return {
+      success: true,
+      spouse: spouse,
+      head: { staffId: head.staffId, name: head.name, registered: head.registered, familyPresent: headFamily },
       registeredAt: formatTime(now)
     };
   } finally {
@@ -483,7 +570,7 @@ function importParticipants(rows, mode) {
         String(r[2] === undefined ? "" : r[2]).trim().slice(0, 150),
         "", "", "",
         parseFamily(r[3]) === null ? "" : parseFamily(r[3]),
-        ""
+        "", ""
       ]);
     });
 
@@ -491,7 +578,7 @@ function importParticipants(rows, mode) {
       const last = sheet.getLastRow();
       if (last >= 2) sheet.getRange(2, 1, last - 1, P_COLS).clearContent();
     }
-    ensureFamilyHeaders(sheet);
+    ensureExtraHeaders(sheet);
     if (out.length) {
       const start = sheet.getLastRow() + 1;
       sheet.getRange(start, 1, out.length, 1).setNumberFormat("@");
@@ -518,7 +605,7 @@ function importFamily(rows) {
     const sheet = getSheet(SHEETS.participants);
     const last = sheet.getLastRow();
     if (last < 2) return { success: false, message: "Upload the participant list first, then the survey numbers." };
-    ensureFamilyHeaders(sheet);
+    ensureExtraHeaders(sheet);
 
     const ids = sheet.getRange(2, 1, last - 1, 1).getValues();
     const col = sheet.getRange(2, 7, last - 1, 1).getValues();
@@ -544,30 +631,50 @@ function importFamily(rows) {
 }
 
 // ── Headcount (staff + family) for the food committee ───────
-// Registered staff who haven't confirmed their family yet are
-// counted with their survey number as an estimate.
+// A head of family's group total includes a staff spouse, so a linked
+// spouse adds a staff member but no extra pax. Registered heads who
+// haven't confirmed their group are counted with their survey number.
 function getHeadcount(ps) {
   ps = ps || readParticipants();
-  let staffPresent = 0, familyConfirmed = 0, familyEstimated = 0, unconfirmed = 0;
-  let familyExpected = 0, surveyed = 0;
+  const byId = {}, spousesOf = {};
   ps.forEach(function (p) {
+    byId[idKey(p.staffId)] = p;
+    if (p.linkedTo && p.registered) spousesOf[idKey(p.linkedTo)] = (spousesOf[idKey(p.linkedTo)] || 0) + 1;
+  });
+
+  let staffPresent = 0, spousesPresent = 0, pax = 0, heads = 0;
+  let familyConfirmed = 0, familyEstimated = 0, unconfirmed = 0, familyExpected = 0, surveyed = 0;
+  ps.forEach(function (p) {
+    if (p.linkedTo) {
+      if (!p.registered) return;
+      staffPresent++;
+      spousesPresent++;
+      const head = byId[idKey(p.linkedTo)];
+      if (!head || !head.registered) pax++;   // head not here yet: count the spouse alone for now
+      return;
+    }
+    heads++;
     if (p.familyExpected !== null) { familyExpected += p.familyExpected; surveyed++; }
     if (!p.registered) return;
     staffPresent++;
-    if (p.familyPresent !== null) familyConfirmed += p.familyPresent;
-    else { unconfirmed++; familyEstimated += p.familyExpected || 0; }
+    const linked = spousesOf[idKey(p.staffId)] || 0;
+    let fam;
+    if (p.familyPresent !== null) { fam = Math.max(p.familyPresent, linked); familyConfirmed += fam; }
+    else { fam = Math.max(p.familyExpected || 0, linked); familyEstimated += fam; unconfirmed++; }
+    pax += 1 + fam;
   });
   return {
     staffPresent:    staffPresent,
-    familyPresent:   familyConfirmed + familyEstimated,
+    spousesPresent:  spousesPresent,
+    familyPresent:   pax - staffPresent,   // family members who are not staff
     familyConfirmed: familyConfirmed,
     familyEstimated: familyEstimated,
     unconfirmed:     unconfirmed,
-    paxPresent:      staffPresent + familyConfirmed + familyEstimated,
-    staffExpected:   ps.length,
+    paxPresent:      pax,
+    staffExpected:   heads,
     familyExpected:  familyExpected,
     surveyed:        surveyed,
-    paxExpected:     ps.length + familyExpected,
+    paxExpected:     heads + familyExpected,
     updated:         formatTime(new Date())
   };
 }
@@ -592,9 +699,17 @@ function newEvent(b) {
 
     const pLast = pSheet.getLastRow();
     if (pLast >= 2) {
-      // keep the staff list, clear attendance and both family columns
-      if (b.keepParticipants) pSheet.getRange(2, 4, pLast - 1, P_COLS - 3).clearContent();
-      else pSheet.getRange(2, 1, pLast - 1, P_COLS).clearContent();
+      const block = pSheet.getRange(2, 1, pLast - 1, P_COLS);
+      if (b.keepParticipants) {
+        // keep the staff list; drop spouses added at check-in; clear attendance, family and links
+        const kept = block.getValues()
+          .filter(function (r) { return String(r[0]).trim() && String(r[5]).trim() !== SPOUSE && !String(r[8]).trim(); })
+          .map(function (r) { return [r[0], r[1], r[2], "", "", "", "", "", ""]; });
+        block.clearContent();
+        if (kept.length) pSheet.getRange(2, 1, kept.length, P_COLS).setValues(kept);
+      } else {
+        block.clearContent();
+      }
     }
     const wLast = wSheet.getLastRow();
     if (wLast >= 2) wSheet.getRange(2, 1, wLast - 1, 6).clearContent();
@@ -808,8 +923,8 @@ function initialize() {
   getSheet(SHEETS.participants);
   getSheet(SHEETS.winners);
   getSheet(SHEETS.departments);
-  CacheService.getScriptCache().remove("familyHeaders");
-  ensureFamilyHeaders(getSheet(SHEETS.participants));
+  CacheService.getScriptCache().remove("extraHeaders");
+  ensureExtraHeaders(getSheet(SHEETS.participants));
   CacheService.getScriptCache().remove("settings");
   Logger.log("Sheets ready. Admin PIN: " + getSetting("AdminPin") + "  (change it in the Settings tab or the Admin page)");
 }

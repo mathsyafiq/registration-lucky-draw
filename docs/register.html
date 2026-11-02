@@ -52,6 +52,13 @@
   .food-total span { color: var(--gold2); font-weight: 700; font-size: 16px; text-transform: uppercase; letter-spacing: 2px; }
   .food-total b { font-family: var(--display); font-size: 64px; font-weight: 900; line-height: 1; color: var(--gold2); }
   .food-detail { color: var(--muted); font-size: 14px; }
+  .spouse { margin-top: 16px; padding-top: 14px; border-top: 1px dashed rgba(247,201,72,.35); text-align: left; }
+  .spouse .sp-q { font-weight: 700; font-size: 14px; text-align: center; }
+  .spouse .sp-sub { color: var(--muted); font-size: 13px; text-align: center; margin: 2px 0 6px; }
+  .spouse .sp-ok { color: var(--green); font-weight: 700; font-size: 14px; text-align: center; margin-top: 4px; }
+  .spouse label.field { margin: 10px 0 0; }
+  .linked { margin-top: 20px; padding: 16px; background: var(--card); border: 1px solid var(--border); border-radius: 16px; }
+  .linked b { color: var(--gold2); }
   .fam-err { color: var(--red); font-size: 13px; min-height: 18px; margin-top: 6px; }
   #wiGroup { max-width: 120px; }
 </style>
@@ -95,6 +102,29 @@
       </label>
       <div class="wi-error" id="wiError"></div>
       <button class="btn gold block big" id="wiSubmit" type="submit">Register</button>
+      <button class="btn ghost block" type="button" onclick="resetForm()">Back</button>
+    </form>
+  </div>
+
+  <div class="panel hidden" id="spousePanel">
+    <form id="spouseForm" autocomplete="off">
+      <div class="wi-head">My spouse registered our family</div>
+      <div class="wi-sub">For staff whose spouse (also staff) answered the family survey. You join the lucky draw; your food is already counted in your spouse's group.</div>
+      <label class="field"><span>Your Staff ID</span>
+        <input type="text" id="ssId" maxlength="40" autocapitalize="characters" autocorrect="off" spellcheck="false" required>
+      </label>
+      <label class="field"><span>Your spouse's Staff ID</span>
+        <input type="text" id="ssHead" maxlength="40" autocapitalize="characters" autocorrect="off" spellcheck="false" required>
+      </label>
+      <label class="field"><span>Your full name</span>
+        <input type="text" id="ssName" maxlength="150" autocapitalize="words" required>
+      </label>
+      <label class="field"><span>Your department</span>
+        <select id="ssDeptSelect"></select>
+        <input type="text" id="ssDeptText" maxlength="150" class="hidden" placeholder="Your department">
+      </label>
+      <div class="wi-error" id="ssError"></div>
+      <button class="btn gold block big" id="ssSubmit" type="submit">Register</button>
       <button class="btn ghost block" type="button" onclick="resetForm()">Back</button>
     </form>
   </div>
@@ -156,20 +186,23 @@
       html = '<div class="result ok"><div class="mark">✓</div>' +
         '<h2>You are registered!</h2>' + personHtml(res) +
         '<div class="time">Registered at ' + App.esc(res.registeredAt) + '</div>' +
-        '<div class="family" id="familyBox"></div>' +
+        familySlot(res.participant) +
         '<div class="luck">🍀 You are now in the lucky draw. Good luck!</div>';
     } else if (res.success && res.already) {
       html = '<div class="result info"><div class="mark">i</div>' +
         '<h2>Already registered</h2>' + personHtml(res) +
         '<div class="time">First registered at ' + App.esc(res.registeredAt) + '</div>' +
-        '<div class="family" id="familyBox"></div>';
+        familySlot(res.participant);
     } else if (res.closed) {
       html = '<div class="result err"><div class="mark">✕</div><h2>Registration is closed</h2>' +
         '<p class="msg">Please see the registration counter.</p>';
-    } else if (res.notFound && eventInfo.allowWalkIn !== false) {
+    } else if (res.notFound) {
+      var walkIn = eventInfo.allowWalkIn !== false;
       html = '<div class="result err"><div class="mark">?</div><h2>Staff ID not found</h2>' +
-        '<p class="msg">' + App.esc(lastId) + ' is not in the participant list. Check the number, or register as a new participant.</p>' +
-        '<button class="btn gold block walkin-btn" type="button" onclick="showWalkIn()">Register as a new participant</button>';
+        '<p class="msg">' + App.esc(lastId) + ' is not in the participant list. Check the number' +
+        (walkIn ? ', or choose an option below.' : '.') + '</p>' +
+        '<button class="btn gold block walkin-btn" type="button" onclick="showSpouseForm()">My spouse already registered our family</button>' +
+        (walkIn ? '<button class="btn ghost block" type="button" onclick="showWalkIn()">Register as a new participant</button>' : '');
     } else {
       html = '<div class="result err"><div class="mark">✕</div><h2>Not registered</h2>' +
         '<p class="msg">' + App.esc(res.message || 'Something went wrong.') + '</p>';
@@ -183,13 +216,152 @@
     resultPanel.classList.remove('hidden');
 
     current = res.success ? res.participant : null;
-    var askFamily = current && current.familyPresent == null;
-    if (current) renderFamily(askFamily ? 'ask' : 'done');
+    if (current && !current.spouses) current.spouses = [];
+    var askFamily = current && !current.linkedTo && current.familyPresent == null;
+    if (current && !current.linkedTo) renderFamily(askFamily ? 'ask' : 'done');
     if (KIOSK) {
       clearTimeout(kioskTimer);
       kioskTimer = setTimeout(resetForm, askFamily ? 45000 : res.success ? 8000 : res.notFound ? 30000 : 8000);
     }
   }
+
+  // A staff spouse linked to a head of family has no group of their own
+  function familySlot(p) {
+    if (p && p.linkedTo) {
+      return '<div class="linked">👨‍👩‍👧 Registered with your spouse\'s family.<br>' +
+        'Your food is included in the group of <b>' + App.esc(p.linkedName || p.linkedTo) + '</b> (' + App.esc(p.linkedTo) + ').</div>';
+    }
+    return '<div class="family" id="familyBox"></div>';
+  }
+
+  function deptControls(sel, txt) {
+    var depts = eventInfo.departments || [];
+    var useList = depts.length > 0;
+    sel.classList.toggle('hidden', !useList);
+    txt.classList.toggle('hidden', useList);
+    sel.innerHTML = '<option value="">Choose a department…</option>' + depts.map(function (d) {
+      return '<option>' + App.esc(d) + '</option>';
+    }).join('');
+    txt.value = '';
+  }
+
+  function deptValue(sel, txt) {
+    return (sel.classList.contains('hidden') ? txt.value : sel.value).trim();
+  }
+
+  // ── Head of family adds a staff spouse (after confirming the group) ──
+  function spouseHtml() {
+    var list = current.spouses || [];
+    if (list.length) {
+      return '<div class="spouse">' + list.map(function (sp) {
+        return '<div class="sp-ok">✓ Spouse in the lucky draw: ' + App.esc(sp.name) + ' (' + App.esc(sp.staffId) + ')</div>';
+      }).join('') + '</div>';
+    }
+    return '<div class="spouse" id="spouseBox">' +
+      '<div class="sp-q">Is your spouse also a UiTM staff member?</div>' +
+      '<div class="sp-sub">Add them so they are in the lucky draw too. They are already counted in your group.</div>' +
+      '<button class="btn ghost block" type="button" onclick="openSpouseAdd()">Add my spouse</button></div>';
+  }
+
+  function openSpouseAdd() {
+    clearTimeout(kioskTimer);
+    var box = document.getElementById('spouseBox');
+    box.innerHTML = '<div class="sp-q">Add your spouse</div>' +
+      '<label class="field"><span>Spouse\'s Staff ID</span><input type="text" id="spId" maxlength="40" autocapitalize="characters" autocorrect="off" spellcheck="false"></label>' +
+      '<label class="field"><span>Spouse\'s full name</span><input type="text" id="spName" maxlength="150" autocapitalize="words"></label>' +
+      '<label class="field"><span>Spouse\'s department</span><select id="spDeptSelect"></select>' +
+      '<input type="text" id="spDeptText" maxlength="150" class="hidden" placeholder="Department"></label>' +
+      '<div class="fam-err" id="spErr"></div>' +
+      '<button class="btn gold block" id="spSave" type="button" onclick="saveSpouse()">Add to lucky draw</button>' +
+      '<button class="btn ghost block" type="button" onclick="renderFamily(\'done\')">Cancel</button>';
+    deptControls(document.getElementById('spDeptSelect'), document.getElementById('spDeptText'));
+    document.getElementById('spId').focus();
+    if (KIOSK) kioskTimer = setTimeout(resetForm, 180000);
+  }
+
+  function saveSpouse() {
+    var err = document.getElementById('spErr');
+    var b = document.getElementById('spSave');
+    var body = {
+      action: 'addSpouse',
+      staffId: current.staffId,
+      spouseId: document.getElementById('spId').value.trim(),
+      name: document.getElementById('spName').value.trim(),
+      department: deptValue(document.getElementById('spDeptSelect'), document.getElementById('spDeptText'))
+    };
+    if (!body.spouseId) { err.textContent = 'Please enter your spouse\'s Staff ID.'; return; }
+    b.disabled = true;
+    b.innerHTML = '<span class="spinner"></span> Adding…';
+    App.post(body).then(function (res) {
+      if (!res.success) {
+        b.disabled = false; b.textContent = 'Add to lucky draw';
+        err.textContent = res.message || 'Could not add. Please try again.';
+        return;
+      }
+      current.spouses.push({ staffId: res.spouse.staffId, name: res.spouse.name });
+      if (res.head.familyPresent != null) current.familyPresent = res.head.familyPresent;
+      renderFamily('done');
+      if (KIOSK) { clearTimeout(kioskTimer); kioskTimer = setTimeout(resetForm, 8000); }
+    }).catch(function () {
+      b.disabled = false; b.textContent = 'Add to lucky draw';
+      err.textContent = 'Cannot reach the server. Please try again.';
+    });
+  }
+
+  // ── Staff spouse registers themselves ───────────────────
+  var spousePanel = document.getElementById('spousePanel');
+
+  function showSpouseForm() {
+    clearTimeout(kioskTimer);
+    document.getElementById('ssId').value = lastId;
+    document.getElementById('ssHead').value = '';
+    document.getElementById('ssName').value = '';
+    document.getElementById('ssError').textContent = '';
+    deptControls(document.getElementById('ssDeptSelect'), document.getElementById('ssDeptText'));
+    resultPanel.classList.add('hidden');
+    spousePanel.classList.remove('hidden');
+    document.getElementById('ssHead').focus();
+    if (KIOSK) kioskTimer = setTimeout(resetForm, 180000);
+  }
+
+  document.getElementById('spouseForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var body = {
+      action: 'registerSpouse',
+      staffId: document.getElementById('ssId').value.trim(),
+      headId: document.getElementById('ssHead').value.trim(),
+      name: document.getElementById('ssName').value.trim(),
+      department: deptValue(document.getElementById('ssDeptSelect'), document.getElementById('ssDeptText'))
+    };
+    var err = document.getElementById('ssError');
+    var b = document.getElementById('ssSubmit');
+    if (!body.staffId || !body.headId || !body.name || !body.department) { err.textContent = 'Please fill in all fields.'; return; }
+    err.textContent = '';
+    b.disabled = true;
+    b.innerHTML = '<span class="spinner"></span> Registering…';
+    App.post(body).then(function (res) {
+      if (res.success) {
+        spousePanel.classList.add('hidden');
+        showResult({
+          success: true, already: false, registeredAt: res.registeredAt,
+          participant: {
+            staffId: res.spouse.staffId, name: res.spouse.name, department: res.spouse.department,
+            linkedTo: res.head.staffId, linkedName: res.head.name
+          }
+        });
+      } else if (res.closed) {
+        spousePanel.classList.add('hidden');
+        showResult(res);
+      } else {
+        err.textContent = res.message || 'Something went wrong.';
+      }
+    }).catch(function () {
+      err.textContent = 'Cannot reach the server. Please check your internet connection and try again.';
+    }).then(function () {
+      b.disabled = false;
+      b.textContent = 'Register';
+    });
+  });
 
   // ── Group size for food (pre-filled from the survey) ─────
   // The sheet stores family members only; the screen shows the group
@@ -209,7 +381,8 @@
         '<div class="food-sub">Sila ambil makanan anda</div>' +
         '<div class="food-total"><span>Total</span><b>' + (fam + 1) + '</b></div>' +
         '<div class="food-detail">' + (fam === 0 ? 'Just you' : 'You + ' + fam + ' family member' + (fam === 1 ? '' : 's')) + '</div>' +
-        '<button class="btn ghost small" type="button" onclick="renderFamily(\'ask\')">Change group size</button>';
+        '<button class="btn ghost small" type="button" onclick="renderFamily(\'ask\')">Change group size</button>' +
+        spouseHtml();
       return;
     }
     var fam0 = p.familyPresent != null ? p.familyPresent : (p.familyExpected != null ? p.familyExpected : 0);
@@ -266,6 +439,7 @@
     input.value = '';
     resultPanel.classList.add('hidden');
     walkInPanel.classList.add('hidden');
+    spousePanel.classList.add('hidden');
     formPanel.classList.remove('hidden');
     input.focus();
   }
