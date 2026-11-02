@@ -227,6 +227,7 @@ function idKey(v) {
 
 function readParticipants() {
   const sheet = getSheet(SHEETS.participants);
+  ensureFamilyHeaders(sheet);
   const last = sheet.getLastRow();
   if (last < 2) return [];
   const data = sheet.getRange(2, 1, last - 1, P_COLS).getValues();
@@ -807,6 +808,8 @@ function initialize() {
   getSheet(SHEETS.participants);
   getSheet(SHEETS.winners);
   getSheet(SHEETS.departments);
+  CacheService.getScriptCache().remove("familyHeaders");
+  ensureFamilyHeaders(getSheet(SHEETS.participants));
   CacheService.getScriptCache().remove("settings");
   Logger.log("Sheets ready. Admin PIN: " + getSetting("AdminPin") + "  (change it in the Settings tab or the Admin page)");
 }
