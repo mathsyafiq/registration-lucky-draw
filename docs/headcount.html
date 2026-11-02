@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Headcount</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/app.css">
+<style>
+  .head { text-align: center; margin: 8px 0 28px; }
+  .head h1 { font-family: var(--display); font-size: clamp(22px, 4vw, 36px); font-weight: 800; margin-top: 12px; line-height: 1.15; }
+  .hero { text-align: center; background: var(--surface); border: 1px solid var(--border); border-radius: 24px; padding: 28px 16px; margin-bottom: 18px; }
+  .hero .k { color: var(--muted); font-size: 14px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; }
+  .hero .v { font-family: var(--display); font-weight: 900; font-size: clamp(72px, 18vw, 180px); line-height: 1; color: var(--gold2); margin: 10px 0 6px; text-shadow: 0 0 40px rgba(247,201,72,.3); }
+  .hero .sub { color: var(--muted); font-size: 16px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
+  .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 20px; text-align: center; }
+  .tile .k { color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
+  .tile .v { font-family: var(--display); font-weight: 800; font-size: clamp(36px, 7vw, 56px); line-height: 1.1; margin-top: 6px; }
+  .tile .s { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .progress { margin-top: 18px; }
+  .progress .bar { height: 14px; border-radius: 10px; background: var(--card); overflow: hidden; }
+  .progress .bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--green), #8ef0c9); border-radius: 10px; transition: width .5s; }
+  .progress .lbl { display: flex; justify-content: space-between; color: var(--muted); font-size: 13px; margin-top: 6px; }
+  .foot { text-align: center; color: var(--muted); font-size: 12px; margin-top: 20px; }
+  .note { color: var(--muted); font-size: 13px; text-align: center; margin-top: 10px; min-height: 18px; }
+</style>
+</head>
+<body>
+<div class="wrap" style="max-width:900px">
+  <div class="head">
+    <span class="badge">Headcount · Bilangan Hadir</span>
+    <h1 id="eventName">&nbsp;</h1>
+    <div class="muted" id="eventDate"></div>
+  </div>
+
+  <div class="hero">
+    <div class="k">Total present now · Jumlah hadir</div>
+    <div class="v" id="pax">–</div>
+    <div class="sub">staff + family members</div>
+    <div class="progress">
+      <div class="bar"><i id="bar"></i></div>
+      <div class="lbl"><span id="pct"></span><span id="expLbl"></span></div>
+    </div>
+  </div>
+
+  <div class="tiles">
+    <div class="tile"><div class="k">Staff present</div><div class="v" id="staff">–</div><div class="s">Staf hadir</div></div>
+    <div class="tile"><div class="k">Family present</div><div class="v" id="family">–</div><div class="s">Ahli keluarga hadir</div></div>
+    <div class="tile"><div class="k">Expected total</div><div class="v" id="expected">–</div><div class="s" id="expSub">Jangkaan (kaji selidik)</div></div>
+  </div>
+  <div class="note" id="note"></div>
+  <div class="foot" id="foot">Updates every 15 seconds</div>
+</div>
+
+<script src="assets/app.js"></script>
+<script>
+  function load() {
+    if (!App.isConfigured()) { document.getElementById('foot').textContent = 'API URL not set.'; return; }
+    App.get({ action: 'headcount' }).then(function (res) {
+      if (!res.success) { document.getElementById('foot').textContent = res.message || 'Could not load.'; return; }
+      var h = res.headcount;
+      document.getElementById('eventName').textContent = res.event.name || '';
+      document.getElementById('eventDate').textContent = res.event.date || '';
+      document.title = 'Headcount · ' + (res.event.name || 'Event');
+      document.getElementById('pax').textContent = h.paxPresent;
+      document.getElementById('staff').textContent = h.staffPresent;
+      document.getElementById('family').textContent = h.familyPresent;
+      document.getElementById('expected').textContent = h.paxExpected;
+      document.getElementById('expSub').textContent = h.staffExpected + ' staff + ' + h.familyExpected + ' family';
+      var pct = h.paxExpected ? Math.min(100, Math.round(h.paxPresent / h.paxExpected * 100)) : 0;
+      document.getElementById('bar').style.width = pct + '%';
+      document.getElementById('pct').textContent = pct + '% of expected';
+      document.getElementById('expLbl').textContent = 'Expected ' + h.paxExpected;
+      document.getElementById('note').textContent = h.unconfirmed
+        ? h.familyEstimated + ' family members are estimated from the survey (' + h.unconfirmed + ' staff have not confirmed yet).'
+        : '';
+      document.getElementById('foot').textContent = 'Updated ' + h.updated + ' · refreshes every 15 seconds';
+    }).catch(function () {
+      document.getElementById('foot').textContent = 'Connection problem, retrying…';
+    });
+  }
+  load();
+  setInterval(function () { if (!document.hidden) load(); }, 15000);
+</script>
+</body>
+</html>

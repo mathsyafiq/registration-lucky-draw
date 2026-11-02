@@ -13,7 +13,7 @@ const SHEETS = {
 
 const HEADERS = {
   Settings:     ["Key", "Value", "Notes"],
-  Participants: ["Staff ID", "Name", "Department", "Status", "Registered At", "Method"],
+  Participants: ["Staff ID", "Name", "Department", "Status", "Registered At", "Method", "Family (Survey)", "Family (Present)"],
   Winners:      ["Draw No", "Staff ID", "Name", "Department", "Drawn At", "Status"],
   Departments:  ["Department"]
 };
@@ -22,6 +22,8 @@ const REGISTERED = "Registered";
 const WON = "WON";
 const VOID = "VOID";
 const WALK_IN = "Walk-in";
+const P_COLS = 8;     // Participants columns A–H
+const FAMILY_MAX = 50;
 
 // ── JSON helper ──────────────────────────────────────────────
 function json(obj) {
@@ -35,6 +37,10 @@ function doGet(e) {
   const action = (e && e.parameter && e.parameter.action) || "info";
   try {
     if (action === "info") return json({ success: true, event: getPublicEvent() });
+    if (action === "headcount") {
+      const ev = getPublicEvent();
+      return json({ success: true, event: { name: ev.name, date: ev.date }, headcount: getHeadcount() });
+    }
     return json({ success: false, message: "Unknown action." });
   } catch (err) {
     return json({ success: false, message: String(err.message || err) });
@@ -59,7 +65,8 @@ function doPost(e) {
 // Actions anyone can call
 const PUBLIC_ACTIONS = {
   register:    function (b) { return registerParticipant(b.staffId, "QR"); },
-  registerNew: function (b) { return registerNew(b); }
+  registerNew: function (b) { return registerNew(b); },
+  setFamily:   function (b) { return setFamily(b.staffId, b.count); }
 };
 
 // Actions that need the admin PIN
@@ -222,7 +229,7 @@ function readParticipants() {
   const sheet = getSheet(SHEETS.participants);
   const last = sheet.getLastRow();
   if (last < 2) return [];
-  const data = sheet.getRange(2, 1, last - 1, 6).getValues();
+  const data = sheet.getRange(2, 1, last - 1, P_COLS).getValues();
   const list = [];
   for (let i = 0; i < data.length; i++) {
     const r = data[i];
@@ -234,10 +241,31 @@ function readParticipants() {
       department:   String(r[2]).trim(),
       registered:   String(r[3]).trim() === REGISTERED,
       registeredAt: r[4] instanceof Date ? r[4] : null,
-      method:       String(r[5]).trim()
+      method:       String(r[5]).trim(),
+      familyExpected: parseFamily(r[6]),
+      familyPresent:  parseFamily(r[7])
     });
   }
   return list;
+}
+
+// "3", 3, "3 orang" → 3; blank → null (unknown)
+function parseFamily(v) {
+  if (v === null || v === undefined || String(v).trim() === "") return null;
+  const m = String(v).match(/\d+/);
+  return m ? Math.min(FAMILY_MAX, Number(m[0])) : null;
+}
+
+// Older sheets were created before the family columns existed
+function ensureFamilyHeaders(sheet) {
+  const cache = CacheService.getScriptCache();
+  if (cache.get("familyHeaders")) return;
+  const h = sheet.getRange(1, 7, 1, 2);
+  if (String(h.getValues()[0][0]).trim() === "") {
+    h.setValues([[HEADERS.Participants[6], HEADERS.Participants[7]]]);
+    h.setBackground("#1a1a2e").setFontColor("#ffffff").setFontWeight("bold");
+  }
+  cache.put("familyHeaders", "1", 21600);
 }
 
 function publicParticipant(p) {
@@ -247,7 +275,9 @@ function publicParticipant(p) {
     department:   p.department,
     registered:   p.registered,
     registeredAt: p.registeredAt ? p.registeredAt.getTime() : null,
-    method:       p.method
+    method:       p.method,
+    familyExpected: p.familyExpected,
+    familyPresent:  p.familyPresent
   };
 }
 
@@ -270,11 +300,13 @@ function registerParticipant(staffId, method) {
       if (idKey(ids[i][0]) !== key) continue;
 
       const row = i + 2;
-      const rec = sheet.getRange(row, 1, 1, 6).getValues()[0];
+      const rec = sheet.getRange(row, 1, 1, P_COLS).getValues()[0];
       const participant = {
-        staffId:    String(rec[0]).trim(),
-        name:       String(rec[1]).trim(),
-        department: String(rec[2]).trim()
+        staffId:        String(rec[0]).trim(),
+        name:           String(rec[1]).trim(),
+        department:     String(rec[2]).trim(),
+        familyExpected: parseFamily(rec[6]),
+        familyPresent:  parseFamily(rec[7])
       };
       if (String(rec[3]).trim() === REGISTERED) {
         return { success: true, already: true, participant: participant, registeredAt: formatTime(rec[4]) };
@@ -295,8 +327,36 @@ function unregister(staffId) {
   const key = idKey(staffId);
   const p = readParticipants().find(function (x) { return idKey(x.staffId) === key; });
   if (!p) return { success: false, message: "Staff ID not found." };
-  getSheet(SHEETS.participants).getRange(p.row, 4, 1, 3).clearContent();
+  const sheet = getSheet(SHEETS.participants);
+  sheet.getRange(p.row, 4, 1, 3).clearContent();
+  sheet.getRange(p.row, 8).clearContent();
   return { success: true };
+}
+
+// Family members who came with a registered participant (not counting them).
+function setFamily(staffId, count) {
+  const key = idKey(staffId);
+  const n = Number(count);
+  if (!key) return { success: false, message: "Please enter your Staff ID." };
+  if (!(Math.floor(n) === n && n >= 0 && n <= FAMILY_MAX)) {
+    return { success: false, message: "Please enter a number between 0 and " + FAMILY_MAX + "." };
+  }
+  const sheet = getSheet(SHEETS.participants);
+  const last = sheet.getLastRow();
+  if (last >= 2) {
+    const ids = sheet.getRange(2, 1, last - 1, 1).getValues();
+    for (let i = 0; i < ids.length; i++) {
+      if (idKey(ids[i][0]) !== key) continue;
+      const row = i + 2;
+      if (String(sheet.getRange(row, 4).getValue()).trim() !== REGISTERED) {
+        return { success: false, message: "Please register first." };
+      }
+      ensureFamilyHeaders(sheet);
+      sheet.getRange(row, 8).setValue(n);
+      return { success: true, familyPresent: n };
+    }
+  }
+  return { success: false, message: "Staff ID not found." };
 }
 
 // Walk-in: staff whose ID is not in the imported list register themselves.
@@ -305,6 +365,7 @@ function registerNew(b) {
   const key = idKey(id);
   const name = String(b.name || "").trim().replace(/\s+/g, " ").slice(0, 150);
   const dept = String(b.department || "").trim().slice(0, 150);
+  const family = Math.max(0, Math.min(FAMILY_MAX, Math.floor(Number(b.family) || 0)));
   if (!key) return { success: false, message: "Please enter your Staff ID." };
   if (!name) return { success: false, message: "Please enter your full name." };
   if (!dept) return { success: false, message: "Please choose your department." };
@@ -330,12 +391,13 @@ function registerNew(b) {
     const sheet = getSheet(SHEETS.participants);
     const row = sheet.getLastRow() + 1;
     sheet.getRange(row, 1).setNumberFormat("@");
-    sheet.getRange(row, 1, 1, 6).setValues([[id, name, dept, REGISTERED, now, WALK_IN]]);
+    ensureFamilyHeaders(sheet);
+    sheet.getRange(row, 1, 1, P_COLS).setValues([[id, name, dept, REGISTERED, now, WALK_IN, "", family]]);
     return {
       success: true,
       already: false,
       walkIn: true,
-      participant: { staffId: id, name: name, department: dept },
+      participant: { staffId: id, name: name, department: dept, familyExpected: null, familyPresent: family },
       registeredAt: formatTime(now)
     };
   } finally {
@@ -391,10 +453,12 @@ function saveDepartments(departments) {
   return { success: true, departmentList: getDepartmentList() };
 }
 
-// rows: [[staffId, name, department], ...]   mode: "replace" | "append"
+// rows: [[staffId, name, department, familyFromSurvey], ...]
+// mode: "replace" | "append" | "family" (only update the survey family numbers)
 function importParticipants(rows, mode) {
   if (!Array.isArray(rows) || rows.length === 0) return { success: false, message: "No rows to import." };
   if (rows.length > 20000) return { success: false, message: "Too many rows (max 20,000)." };
+  if (mode === "family") return importFamily(rows);
 
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(20000)) return { success: false, message: "System is busy. Please try again." };
@@ -416,18 +480,21 @@ function importParticipants(rows, mode) {
         id,
         String(r[1] === undefined ? "" : r[1]).trim().slice(0, 150),
         String(r[2] === undefined ? "" : r[2]).trim().slice(0, 150),
-        "", "", ""
+        "", "", "",
+        parseFamily(r[3]) === null ? "" : parseFamily(r[3]),
+        ""
       ]);
     });
 
     if (mode !== "append") {
       const last = sheet.getLastRow();
-      if (last >= 2) sheet.getRange(2, 1, last - 1, 6).clearContent();
+      if (last >= 2) sheet.getRange(2, 1, last - 1, P_COLS).clearContent();
     }
+    ensureFamilyHeaders(sheet);
     if (out.length) {
       const start = sheet.getLastRow() + 1;
       sheet.getRange(start, 1, out.length, 1).setNumberFormat("@");
-      sheet.getRange(start, 1, out.length, 6).setValues(out);
+      sheet.getRange(start, 1, out.length, P_COLS).setValues(out);
     }
     CacheService.getScriptCache().remove("departments");
     return {
@@ -440,6 +507,68 @@ function importParticipants(rows, mode) {
   } finally {
     lock.releaseLock();
   }
+}
+
+// Survey results: match by Staff ID and fill in "Family (Survey)".
+function importFamily(rows) {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) return { success: false, message: "System is busy. Please try again." };
+  try {
+    const sheet = getSheet(SHEETS.participants);
+    const last = sheet.getLastRow();
+    if (last < 2) return { success: false, message: "Upload the participant list first, then the survey numbers." };
+    ensureFamilyHeaders(sheet);
+
+    const ids = sheet.getRange(2, 1, last - 1, 1).getValues();
+    const col = sheet.getRange(2, 7, last - 1, 1).getValues();
+    const rowOf = {};
+    ids.forEach(function (r, i) { if (String(r[0]).trim()) rowOf[idKey(r[0])] = i; });
+
+    let updated = 0;
+    const notFound = [];
+    rows.forEach(function (r) {
+      const key = idKey(r[0]);
+      if (!key) return;
+      const n = parseFamily(r[3]);
+      if (n === null) return;
+      if (rowOf[key] === undefined) { notFound.push(String(r[0]).trim()); return; }
+      col[rowOf[key]][0] = n;
+      updated++;
+    });
+    sheet.getRange(2, 7, last - 1, 1).setValues(col);
+    return { success: true, updated: updated, notFound: notFound.length, notFoundIds: notFound.slice(0, 20) };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ── Headcount (staff + family) for the food committee ───────
+// Registered staff who haven't confirmed their family yet are
+// counted with their survey number as an estimate.
+function getHeadcount(ps) {
+  ps = ps || readParticipants();
+  let staffPresent = 0, familyConfirmed = 0, familyEstimated = 0, unconfirmed = 0;
+  let familyExpected = 0, surveyed = 0;
+  ps.forEach(function (p) {
+    if (p.familyExpected !== null) { familyExpected += p.familyExpected; surveyed++; }
+    if (!p.registered) return;
+    staffPresent++;
+    if (p.familyPresent !== null) familyConfirmed += p.familyPresent;
+    else { unconfirmed++; familyEstimated += p.familyExpected || 0; }
+  });
+  return {
+    staffPresent:    staffPresent,
+    familyPresent:   familyConfirmed + familyEstimated,
+    familyConfirmed: familyConfirmed,
+    familyEstimated: familyEstimated,
+    unconfirmed:     unconfirmed,
+    paxPresent:      staffPresent + familyConfirmed + familyEstimated,
+    staffExpected:   ps.length,
+    familyExpected:  familyExpected,
+    surveyed:        surveyed,
+    paxExpected:     ps.length + familyExpected,
+    updated:         formatTime(new Date())
+  };
 }
 
 // Archive the current event into new tabs, then start fresh.
@@ -462,8 +591,9 @@ function newEvent(b) {
 
     const pLast = pSheet.getLastRow();
     if (pLast >= 2) {
-      if (b.keepParticipants) pSheet.getRange(2, 4, pLast - 1, 3).clearContent();
-      else pSheet.getRange(2, 1, pLast - 1, 6).clearContent();
+      // keep the staff list, clear attendance and both family columns
+      if (b.keepParticipants) pSheet.getRange(2, 4, pLast - 1, P_COLS - 3).clearContent();
+      else pSheet.getRange(2, 1, pLast - 1, P_COLS).clearContent();
     }
     const wLast = wSheet.getLastRow();
     if (wLast >= 2) wSheet.getRange(2, 1, wLast - 1, 6).clearContent();
@@ -509,6 +639,7 @@ function getDashboard() {
     success: true,
     event: getEvent(),
     stats: { total: ps.length, registered: registered, walkIns: walkIns },
+    headcount: getHeadcount(ps),
     departmentList: getDepartmentList(),
     departments: Object.keys(depts).map(function (k) { return depts[k]; })
       .sort(function (a, b) { return b.total - a.total; }),

@@ -36,6 +36,17 @@
   .wi-error { color: var(--red); font-size: 14px; min-height: 20px; margin-bottom: 8px; }
   #wiId { text-transform: uppercase; font-weight: 700; letter-spacing: 2px; }
   #walkInPanel .btn + .btn { margin-top: 10px; }
+  .family { margin-top: 20px; padding: 18px 16px; background: var(--card); border: 1px solid var(--border); border-radius: 16px; }
+  .family .btn { margin-top: 12px; }
+  .fam-q { font-weight: 700; font-size: 16px; }
+  .fam-sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .stepper { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 14px; }
+  .stepper .step { width: 52px; height: 52px; border-radius: 50%; border: 1.5px solid var(--border); background: var(--surface); color: var(--text); font-size: 26px; font-weight: 700; cursor: pointer; }
+  .stepper .step:active { transform: scale(.95); }
+  .stepper input { width: 90px; text-align: center; font-family: var(--display); font-size: 30px; font-weight: 800; padding: 8px; }
+  .fam-done { font-weight: 700; font-size: 16px; color: var(--green); }
+  .fam-err { color: var(--red); font-size: 13px; min-height: 18px; margin-top: 6px; }
+  #wiFamily { max-width: 120px; }
 </style>
 </head>
 <body>
@@ -71,6 +82,9 @@
       <label class="field"><span>Department</span>
         <select id="wiDeptSelect"></select>
         <input type="text" id="wiDeptText" maxlength="150" class="hidden" placeholder="Your department">
+      </label>
+      <label class="field"><span>Family members with you today (not counting yourself)</span>
+        <input type="number" id="wiFamily" min="0" max="50" inputmode="numeric" value="0" required>
       </label>
       <div class="wi-error" id="wiError"></div>
       <button class="btn gold block big" id="wiSubmit" type="submit">Register</button>
@@ -135,11 +149,13 @@
       html = '<div class="result ok"><div class="mark">✓</div>' +
         '<h2>You are registered!</h2>' + personHtml(res) +
         '<div class="time">Registered at ' + App.esc(res.registeredAt) + '</div>' +
+        '<div class="family" id="familyBox"></div>' +
         '<div class="luck">🍀 You are now in the lucky draw. Good luck!</div>';
     } else if (res.success && res.already) {
       html = '<div class="result info"><div class="mark">i</div>' +
         '<h2>Already registered</h2>' + personHtml(res) +
-        '<div class="time">First registered at ' + App.esc(res.registeredAt) + '</div>';
+        '<div class="time">First registered at ' + App.esc(res.registeredAt) + '</div>' +
+        '<div class="family" id="familyBox"></div>';
     } else if (res.closed) {
       html = '<div class="result err"><div class="mark">✕</div><h2>Registration is closed</h2>' +
         '<p class="msg">Please see the registration counter.</p>';
@@ -158,10 +174,67 @@
     resultPanel.innerHTML = html;
     formPanel.classList.add('hidden');
     resultPanel.classList.remove('hidden');
+
+    current = res.success ? res.participant : null;
+    var askFamily = current && current.familyPresent == null;
+    if (current) renderFamily(askFamily ? 'ask' : 'done');
     if (KIOSK) {
       clearTimeout(kioskTimer);
-      kioskTimer = setTimeout(resetForm, res.success ? 5000 : res.notFound ? 30000 : 8000);
+      kioskTimer = setTimeout(resetForm, askFamily ? 45000 : res.success ? 5000 : res.notFound ? 30000 : 8000);
     }
+  }
+
+  // ── Family members present (pre-filled from the survey) ──
+  var current = null;
+
+  function renderFamily(mode) {
+    var box = document.getElementById('familyBox');
+    if (!box || !current) return;
+    var p = current;
+    if (mode === 'done') {
+      var n = p.familyPresent;
+      box.innerHTML = '<div class="fam-done">✓ ' + (n === 0 ? 'No family members with you' :
+        n + ' family member' + (n === 1 ? '' : 's') + ' with you') + '</div>' +
+        '<button class="btn ghost small" type="button" onclick="renderFamily(\'ask\')">Change</button>';
+      return;
+    }
+    var v = p.familyPresent != null ? p.familyPresent : (p.familyExpected != null ? p.familyExpected : 0);
+    box.innerHTML = '<div class="fam-q">How many family members came with you?</div>' +
+      '<div class="fam-sub">Not counting yourself' + (p.familyExpected != null ? ' · From the survey: ' + p.familyExpected : '') + '</div>' +
+      '<div class="stepper">' +
+        '<button type="button" class="step" onclick="stepFamily(-1)" aria-label="Fewer">−</button>' +
+        '<input type="number" id="famCount" min="0" max="50" inputmode="numeric" value="' + v + '" aria-label="Family members">' +
+        '<button type="button" class="step" onclick="stepFamily(1)" aria-label="More">+</button>' +
+      '</div>' +
+      '<button class="btn gold block" id="famSave" type="button" onclick="saveFamily()">Confirm</button>' +
+      '<div class="fam-err" id="famErr"></div>';
+  }
+
+  function stepFamily(d) {
+    var el = document.getElementById('famCount');
+    el.value = Math.max(0, Math.min(50, (parseInt(el.value, 10) || 0) + d));
+  }
+
+  function saveFamily() {
+    var n = Number(document.getElementById('famCount').value);
+    var err = document.getElementById('famErr');
+    var b = document.getElementById('famSave');
+    if (!(Math.floor(n) === n && n >= 0 && n <= 50)) { err.textContent = 'Please enter a number between 0 and 50.'; return; }
+    b.disabled = true;
+    b.innerHTML = '<span class="spinner"></span> Saving…';
+    App.post({ action: 'setFamily', staffId: current.staffId, count: n }).then(function (res) {
+      if (!res.success) {
+        b.disabled = false; b.textContent = 'Confirm';
+        err.textContent = res.message || 'Could not save. Please try again.';
+        return;
+      }
+      current.familyPresent = n;
+      renderFamily('done');
+      if (KIOSK) { clearTimeout(kioskTimer); kioskTimer = setTimeout(resetForm, 4000); }
+    }).catch(function () {
+      b.disabled = false; b.textContent = 'Confirm';
+      err.textContent = 'Cannot reach the server. Please try again.';
+    });
   }
 
   function personHtml(res) {
@@ -198,6 +271,7 @@
     }).join('');
     document.getElementById('wiId').value = lastId;
     document.getElementById('wiName').value = '';
+    document.getElementById('wiFamily').value = 0;
     deptText.value = '';
     document.getElementById('wiError').textContent = '';
     resultPanel.classList.add('hidden');
@@ -213,11 +287,15 @@
       action: 'registerNew',
       staffId: document.getElementById('wiId').value.trim(),
       name: document.getElementById('wiName').value.trim(),
-      department: (useList ? deptSelect.value : deptText.value).trim()
+      department: (useList ? deptSelect.value : deptText.value).trim(),
+      family: Number(document.getElementById('wiFamily').value)
     };
     var err = document.getElementById('wiError');
     var btn = document.getElementById('wiSubmit');
     if (!body.staffId || !body.name || !body.department) { err.textContent = 'Please fill in all fields.'; return; }
+    if (!(Math.floor(body.family) === body.family && body.family >= 0 && body.family <= 50)) {
+      err.textContent = 'Family members must be a number between 0 and 50.'; return;
+    }
     err.textContent = '';
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span> Registering…';

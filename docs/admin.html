@@ -18,6 +18,10 @@
   .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 18px; }
   .stat .k { color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
   .stat .v { font-family: var(--display); font-size: 36px; font-weight: 800; line-height: 1.1; margin-top: 6px; }
+  .stat .s { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .food .stats { margin: 16px 0 0; }
+  .food .stat { background: var(--card); }
+  .food .v.gold { color: var(--gold2); }
   .bar { height: 10px; border-radius: 10px; background: var(--card); overflow: hidden; }
   .bar > i { display: block; height: 100%; background: linear-gradient(90deg, var(--green), #8ef0c9); border-radius: 10px; transition: width .4s; }
   .bar.big { height: 14px; margin-top: 12px; }
@@ -92,6 +96,25 @@
       <div class="stat"><div class="k">Total participants</div><div class="v" id="stTotal">0</div><div class="muted" style="font-size:12px" id="stWalk"></div></div>
       <div class="stat"><div class="k">Attendance</div><div class="v" id="stPct">0%</div><div class="bar big"><i id="stBar" style="width:0"></i></div></div>
     </div>
+    <div class="panel food hidden" id="foodPanel">
+      <div class="row" style="justify-content:space-between">
+        <div>
+          <div class="section-title">Headcount for food</div>
+          <div class="section-sub" style="margin:0">Staff + family members present</div>
+        </div>
+        <div class="row">
+          <a class="btn ghost small" data-page="headcount.html" href="headcount.html" target="_blank">📺 Headcount screen</a>
+          <button class="btn ghost small" id="copyHeadcount" type="button">Copy link for food committee</button>
+        </div>
+      </div>
+      <div class="stats">
+        <div class="stat"><div class="k">Pax present now</div><div class="v gold" id="hcPax">0</div><div class="s">staff + family</div></div>
+        <div class="stat"><div class="k">Staff present</div><div class="v" id="hcStaff">0</div></div>
+        <div class="stat"><div class="k">Family present</div><div class="v" id="hcFam">0</div><div class="s" id="hcFamSub"></div></div>
+        <div class="stat"><div class="k">Expected pax</div><div class="v" id="hcExp">0</div><div class="s" id="hcExpSub"></div></div>
+      </div>
+    </div>
+
     <div class="grid2">
       <div class="panel">
         <div class="section-title">By department</div>
@@ -126,7 +149,7 @@
       <div class="muted" style="font-size:13px;margin-bottom:10px" id="partCount"></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Staff ID</th><th>Name</th><th>Department</th><th>Status</th><th>Time</th><th></th></tr></thead>
+          <thead><tr><th>Staff ID</th><th>Name</th><th>Department</th><th>Status</th><th>Time</th><th>Family</th><th></th></tr></thead>
           <tbody id="partBody"></tbody>
         </table>
       </div>
@@ -202,7 +225,8 @@
 
     <div class="panel">
       <div class="section-title">Upload participant list</div>
-      <div class="section-sub">Copy the columns <b>Staff ID, Name, Department</b> from Excel or Google Sheets and paste below, or choose a CSV file. A header row is detected automatically.</div>
+      <div class="section-sub">Copy the columns <b>Staff ID, Name, Department</b> (and optionally <b>Family members</b>) from Excel or Google Sheets and paste below, or choose a CSV file. A header row is detected automatically.<br>
+        Survey results in a separate file? Upload the staff list first, then paste the survey's <b>Staff ID</b> and <b>number of family members</b> columns with <i>Update family numbers only</i>.</div>
       <textarea id="importText" placeholder="Staff ID&#9;Name&#9;Department&#10;123456&#9;Ahmad bin Ali&#9;Faculty of Computer Science&#10;123457&#9;Siti Aminah&#9;Registrar Office"></textarea>
       <div class="row" style="margin-top:10px">
         <input type="file" id="importFile" accept=".csv,.tsv,.txt,text/csv">
@@ -211,6 +235,7 @@
       <div class="radio">
         <label><input type="radio" name="importMode" value="replace" checked> Replace the whole list</label>
         <label><input type="radio" name="importMode" value="append"> Add to the existing list</label>
+        <label><input type="radio" name="importMode" value="family"> Update family numbers only (survey)</label>
       </div>
       <button class="btn gold" id="importBtn" type="button" disabled>Upload list</button>
     </div>
@@ -300,6 +325,7 @@ function renderOverview(d) {
   document.getElementById('stNot').textContent = total - reg;
   document.getElementById('stTotal').textContent = total;
   document.getElementById('stWalk').textContent = d.stats.walkIns ? 'incl. ' + d.stats.walkIns + ' walk-in' : '';
+  renderHeadcount(d.headcount);
   document.getElementById('stPct').textContent = pct + '%';
   document.getElementById('stBar').style.width = pct + '%';
   document.getElementById('updated').textContent = 'Updated ' + d.serverTime;
@@ -333,6 +359,28 @@ document.getElementById('toggleRegBtn').addEventListener('click', function () {
     renderHeader(res.event);
     App.toast('Registration ' + (open ? 'opened' : 'closed') + '.', 'ok');
   });
+});
+
+// ── Headcount for food ───────────────────────────────────────
+function renderHeadcount(h) {
+  var panel = document.getElementById('foodPanel');
+  if (!h) { panel.classList.add('hidden'); return; }
+  panel.classList.remove('hidden');
+  document.getElementById('hcPax').textContent = h.paxPresent;
+  document.getElementById('hcStaff').textContent = h.staffPresent;
+  document.getElementById('hcFam').textContent = h.familyPresent;
+  document.getElementById('hcFamSub').textContent = h.unconfirmed
+    ? h.familyConfirmed + ' confirmed · ' + h.familyEstimated + ' estimated from survey (' + h.unconfirmed + ' staff not confirmed)'
+    : 'all confirmed at check-in';
+  document.getElementById('hcExp').textContent = h.paxExpected;
+  document.getElementById('hcExpSub').textContent = h.staffExpected + ' staff + ' + h.familyExpected + ' family · ' +
+    h.surveyed + ' survey answers';
+}
+
+document.getElementById('copyHeadcount').addEventListener('click', function () {
+  navigator.clipboard.writeText(App.absoluteLink('headcount.html')).then(function () {
+    App.toast('Headcount link copied. It shows numbers only, no names.', 'ok');
+  }, function () { App.toast('Copy failed.', 'error'); });
 });
 
 // ── Participants ─────────────────────────────────────────────
@@ -377,17 +425,27 @@ function renderParticipants() {
     return '<tr><td class="mono">' + App.esc(p.staffId) + '</td><td>' + App.esc(p.name) + '</td><td>' + App.esc(p.department) + '</td>' +
       '<td>' + (p.registered ? '<span class="pill green">Registered</span>' : '<span class="pill grey">Not yet</span>') + '</td>' +
       '<td class="muted" style="font-size:12px;white-space:nowrap">' + fmtTime(p.registeredAt) + (p.method === 'Manual' ? ' · manual' : p.method === 'Walk-in' ? ' · <span class="pill gold">Walk-in</span>' : '') + '</td>' +
+      '<td style="white-space:nowrap">' + familyCell(p) + '</td>' +
       '<td style="text-align:right">' + (p.registered
-        ? '<button class="btn ghost small" data-act="unregister" data-id="' + App.esc(p.staffId) + '">Undo</button>'
+        ? '<button class="btn ghost small" data-act="family" data-id="' + App.esc(p.staffId) + '">Family</button> ' +
+          '<button class="btn ghost small" data-act="unregister" data-id="' + App.esc(p.staffId) + '">Undo</button>'
         : '<button class="btn small" data-act="manualRegister" data-id="' + App.esc(p.staffId) + '">Register</button>') +
       '</td></tr>';
-  }).join('') || '<tr><td colspan="6" class="muted" style="text-align:center;padding:24px">No participants.</td></tr>';
+  }).join('') || '<tr><td colspan="7" class="muted" style="text-align:center;padding:24px">No participants.</td></tr>';
+}
+
+// Present (confirmed at check-in) and the survey number
+function familyCell(p) {
+  var out = p.familyPresent != null ? '<b>' + p.familyPresent + '</b>' : '<span class="muted">–</span>';
+  if (p.familyExpected != null) out += ' <span class="muted" style="font-size:12px">/ survey ' + p.familyExpected + '</span>';
+  return out;
 }
 
 document.getElementById('partBody').addEventListener('click', function (e) {
   var btn = e.target.closest('button[data-act]');
   if (!btn) return;
   var act = btn.getAttribute('data-act'), id = btn.getAttribute('data-id');
+  if (act === 'family') { editFamily(btn, id); return; }
   if (act === 'unregister' && !confirm('Undo registration for ' + id + '?')) return;
   withButton(btn, call(act, { staffId: id })).then(function (res) {
     if (!res.success) { App.toast(res.message, 'error'); return; }
@@ -402,13 +460,29 @@ document.getElementById('partBody').addEventListener('click', function (e) {
   });
 });
 
+function editFamily(btn, id) {
+  var p = state.participants.find(function (x) { return x.staffId === id; });
+  var cur = p.familyPresent != null ? p.familyPresent : (p.familyExpected != null ? p.familyExpected : 0);
+  var v = prompt('Family members with ' + id + ' (' + p.name + '), not counting the staff member:', cur);
+  if (v === null) return;
+  var n = Number(v);
+  if (!(Math.floor(n) === n && n >= 0 && n <= 50)) { App.toast('Enter a number between 0 and 50.', 'error'); return; }
+  withButton(btn, call('setFamily', { staffId: id, count: n })).then(function (res) {
+    if (!res.success) { App.toast(res.message, 'error'); return; }
+    p.familyPresent = n;
+    renderParticipants();
+    App.toast('Family for ' + id + ' set to ' + n + '.', 'ok');
+  });
+}
+
 document.getElementById('search').addEventListener('input', renderParticipants);
 document.getElementById('filter').addEventListener('change', renderParticipants);
 document.getElementById('reloadParts').addEventListener('click', loadParticipants);
 document.getElementById('exportParts').addEventListener('click', function () {
-  var rows = [['Staff ID', 'Name', 'Department', 'Status', 'Registered At', 'Method']].concat(
+  var rows = [['Staff ID', 'Name', 'Department', 'Status', 'Registered At', 'Method', 'Family (Survey)', 'Family (Present)']].concat(
     (state.participants || []).map(function (p) {
-      return [p.staffId, p.name, p.department, p.registered ? 'Registered' : '', fmtTime(p.registeredAt), p.method];
+      return [p.staffId, p.name, p.department, p.registered ? 'Registered' : '', fmtTime(p.registeredAt), p.method,
+        p.familyExpected != null ? p.familyExpected : '', p.familyPresent != null ? p.familyPresent : ''];
     }));
   downloadCsv(rows, fileBase() + ' - attendance.csv');
 });
@@ -557,7 +631,9 @@ document.getElementById('posterBtn').addEventListener('click', function () {
 });
 
 // ── Setup: import ────────────────────────────────────────────
-function parseTable(text) {
+var FAMILY_RE = /famil|keluarga|ahli|tanggungan|pengiring|pax|anak/i;
+
+function parseTable(text, mode) {
   text = String(text || '').replace(/\r\n?/g, '\n').replace(/^﻿/, '').trim();
   if (!text) return { rows: [], header: null };
   var first = text.split('\n')[0];
@@ -579,8 +655,10 @@ function parseTable(text) {
     .filter(function (r) { return r.some(function (c) { return c; }); });
 
   // Header row: map columns by name
-  var cols = [0, 1, 2], header = null;
-  if (rows.length && /staf|id|no|nama|name/i.test(rows[0].join(' ')) && !/\d{3,}/.test(rows[0].join(' '))) {
+  var width = rows.reduce(function (m, r) { return Math.max(m, r.length); }, 0);
+  // [staffId, name, department, family]; -1 = not present
+  var cols = mode === 'family' && width === 2 ? [0, -1, -1, 1] : [0, 1, 2, 3], header = null;
+  if (rows.length && /staf|id|no|nama|name|famil|keluarga/i.test(rows[0].join(' ')) && !/\d{3,}/.test(rows[0].join(' '))) {
     header = rows.shift();
     var find = function (re, fallback) {
       for (var j = 0; j < header.length; j++) if (re.test(header[j])) return j;
@@ -589,31 +667,40 @@ function parseTable(text) {
     cols = [
       find(/staf|\bid\b|pekerja/i, find(/^no/i, 0)),
       find(/name|nama/i, 1),
-      find(/dep|jabatan|fakulti|faculty|unit|bahagian|pusat|division|ptj/i, 2)
+      find(/dep|jabatan|fakulti|faculty|unit|bahagian|pusat|division|ptj/i, 2),
+      find(FAMILY_RE, mode === 'family' && width === 2 ? 1 : 3)
     ];
   }
+  var at = function (r, i) { return i >= 0 && r[i] ? r[i] : ''; };
   return {
     header: header,
-    rows: rows.map(function (r) { return [r[cols[0]] || '', r[cols[1]] || '', r[cols[2]] || '']; })
+    rows: rows.map(function (r) { return [at(r, cols[0]), at(r, cols[1]), at(r, cols[2]), at(r, cols[3])]; })
       .filter(function (r) { return r[0]; })
   };
 }
 
 function updatePreview() {
-  var parsed = parseTable(document.getElementById('importText').value);
+  var mode = document.querySelector('input[name=importMode]:checked').value;
+  var parsed = parseTable(document.getElementById('importText').value, mode);
   state.importRows = parsed.rows;
   var el = document.getElementById('importPreview');
   document.getElementById('importBtn').disabled = !parsed.rows.length;
   if (!parsed.rows.length) { el.innerHTML = ''; return; }
-  el.innerHTML = '<b style="color:var(--text)">' + parsed.rows.length + ' participants found</b>' +
-    (parsed.header ? ' (header row skipped)' : '') + '. First rows:' +
-    '<div class="table-wrap"><table><thead><tr><th>Staff ID</th><th>Name</th><th>Department</th></tr></thead><tbody>' +
+  var withFamily = parsed.rows.filter(function (r) { return /\d/.test(r[3]); }).length;
+  var familyOnly = mode === 'family';
+  el.innerHTML = '<b style="color:var(--text)">' + parsed.rows.length + (familyOnly ? ' survey rows' : ' participants') + ' found</b>' +
+    (parsed.header ? ' (header row skipped)' : '') + ', ' + withFamily + ' with a family number. First rows:' +
+    '<div class="table-wrap"><table><thead><tr><th>Staff ID</th>' + (familyOnly ? '' : '<th>Name</th><th>Department</th>') +
+    '<th>Family</th></tr></thead><tbody>' +
     parsed.rows.slice(0, 5).map(function (r) {
-      return '<tr><td class="mono">' + App.esc(r[0]) + '</td><td>' + App.esc(r[1]) + '</td><td>' + App.esc(r[2]) + '</td></tr>';
+      return '<tr><td class="mono">' + App.esc(r[0]) + '</td>' +
+        (familyOnly ? '' : '<td>' + App.esc(r[1]) + '</td><td>' + App.esc(r[2]) + '</td>') +
+        '<td>' + App.esc(r[3]) + '</td></tr>';
     }).join('') + '</tbody></table></div>';
 }
 
 document.getElementById('importText').addEventListener('input', updatePreview);
+document.querySelectorAll('input[name=importMode]').forEach(function (r) { r.addEventListener('change', updatePreview); });
 document.getElementById('importFile').addEventListener('change', function () {
   var file = this.files[0];
   if (!file) return;
@@ -631,12 +718,19 @@ document.getElementById('importBtn').addEventListener('click', function () {
   var n = state.importRows.length;
   var msg = mode === 'replace'
     ? 'Replace the whole participant list with ' + n + ' people?\nCurrent attendance for this event will be lost (winners are kept).'
-    : 'Add ' + n + ' people to the existing list? Staff IDs already on the list are skipped.';
+    : mode === 'family'
+      ? 'Update the survey family numbers for ' + n + ' Staff IDs? Names and attendance are not changed.'
+      : 'Add ' + n + ' people to the existing list? Staff IDs already on the list are skipped.';
   if (!confirm(msg)) return;
   withButton(this, call('importParticipants', { rows: state.importRows, mode: mode })).then(function (res) {
     if (!res.success) { App.toast(res.message, 'error'); return; }
-    App.toast(res.imported + ' imported' + (res.duplicates ? ', ' + res.duplicates + ' duplicates skipped' : '') +
-      '. Total: ' + res.total + '.', 'ok');
+    if (mode === 'family') {
+      App.toast('Family numbers updated for ' + res.updated + ' staff.' +
+        (res.notFound ? ' ' + res.notFound + ' Staff IDs not in the list: ' + res.notFoundIds.slice(0, 5).join(', ') + (res.notFound > 5 ? '…' : '') : ''), 'ok');
+    } else {
+      App.toast(res.imported + ' imported' + (res.duplicates ? ', ' + res.duplicates + ' duplicates skipped' : '') +
+        '. Total: ' + res.total + '.', 'ok');
+    }
     document.getElementById('importText').value = '';
     document.getElementById('importFile').value = '';
     updatePreview();

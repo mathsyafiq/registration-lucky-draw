@@ -4,7 +4,8 @@
   - `index.html` — home page linking to the three pages
   - `register.html` — **Participants**: scan QR → enter Staff ID → registered (staff not in the list can register as walk-ins)
   - `draw.html` — **Lucky Draw**: wheel of fortune, drum roll, announces the winner's Staff ID twice (PIN)
-  - `admin.html` — **Admin**: live attendance, upload participant list, QR poster, winners, new event (PIN)
+  - `admin.html` — **Admin**: live attendance and headcount, upload participant list and survey, QR poster, winners, new event (PIN)
+  - `headcount.html` — **Headcount** for the food committee: staff + family present, live, numbers only (no PIN)
   - `assets/app.js` — shared helpers + **API URL setting**
 - `apps-script/Code.gs` — backend API (Google Apps Script + Google Sheet)
 
@@ -45,6 +46,10 @@ Your site will be at `https://<user>.github.io/<repo>/`.
 1. **Admin → Event setup**: set the event name and date, and paste the participant list (copy the columns
    *Staff ID, Name, Department* from Excel/Google Sheets; a header row is detected automatically).
    You can also type the list directly into the `Participants` tab of the Google Sheet.
+   - **Family numbers from the survey:** include a *Family members* column in the same paste, or, if the survey is
+     a separate file, upload the staff list first, then paste the survey's *Staff ID* + *number of family members*
+     columns with **Update family numbers only (survey)**. Text like "3 orang" is read as 3. Survey Staff IDs that
+     are not in the list are reported.
 2. **Admin → Event setup → Print poster**: put the QR code at the entrance. For a shared tablet at the door, use
    the kiosk link (it resets the form after each person).
 3. Watch arrivals on **Admin → Overview** (refreshes every 10 s). Staff without a phone can be registered
@@ -54,6 +59,11 @@ Your site will be at `https://<user>.github.io/<repo>/`.
      Turn this on/off in **Admin → Event setup → Allow walk-in registration**.
    - **Departments** for the walk-in dropdown: **Admin → Event setup → Departments** (one per line), or type them into
      the `Departments` tab of the Google Sheet. Until a list is set, the departments in the participant list are used.
+   - **Family at check-in:** after registering, staff see *How many family members came with you?* pre-filled with
+     their survey number, adjust it if needed and tap **Confirm**. Admins can correct it in **Admin → Participants → Family**.
+   - **Food committee:** **Admin → Overview → Copy link for food committee** gives a live headcount page
+     (`headcount.html`, refreshes every 15 s, numbers only). Staff who registered but didn't confirm are counted with
+     their survey number as an estimate; the page says how many are estimated.
 4. When it's time for the draw, open **Lucky Draw** on the projector laptop, enter the PIN, open **⚙ Settings**
    and set the number of lucky draws. Click **Full screen**. Press **▶ Test sound & voice** once to check the speakers.
 5. The VIP clicks **SPIN** (or press Space). After the drum roll the winner's Staff ID is shown and announced twice,
