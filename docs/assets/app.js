@@ -4,7 +4,7 @@
 
 // ── Configuration ────────────────────────────────────────────
 // Paste your Apps Script Web App URL here (ends in /exec).
-var DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbzo19hbZ_aMODI3UfR_LhBEOm-OzIo_umnegDtGmOoxc1JoJzvvv5-arMoIh7c3uALL/exec';
+var DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbzSSutfQDbsVTMwd8s6nOccMdBNwG4U13oEqTjb9Xz3tZnDTcG2ZgiaKFn-j3JSxnwg/exec';
 
 var App = (function () {
   // Another organiser can reuse these pages with their own Google Sheet
