@@ -49,7 +49,8 @@ Your site will be at `https://<user>.github.io/<repo>/`.
    - **Family numbers from the survey:** include a *Family members* column in the same paste, or, if the survey is
      a separate file, upload the staff list first, then paste the survey's *Staff ID* + *number of family members*
      columns with **Update family numbers only (survey)**. Text like "3 orang" is read as 3. Survey Staff IDs that
-     are not in the list are reported.
+     are not in the list are reported. Tick **The survey number includes the staff member** if the survey asked for the
+     total number of people (the sheet stores family members only, so 1 is subtracted).
 2. **Admin → Event setup → Print poster**: put the QR code at the entrance. For a shared tablet at the door, use
    the kiosk link (it resets the form after each person).
 3. Watch arrivals on **Admin → Overview** (refreshes every 10 s). Staff without a phone can be registered
@@ -59,8 +60,10 @@ Your site will be at `https://<user>.github.io/<repo>/`.
      Turn this on/off in **Admin → Event setup → Allow walk-in registration**.
    - **Departments** for the walk-in dropdown: **Admin → Event setup → Departments** (one per line), or type them into
      the `Departments` tab of the Google Sheet. Until a list is set, the departments in the participant list are used.
-   - **Family at check-in:** after registering, staff see *How many family members came with you?* pre-filled with
-     their survey number, adjust it if needed and tap **Confirm**. Admins can correct it in **Admin → Participants → Family**.
+   - **Group size and food at check-in:** after registering, staff see *How many people in your group, including you?*
+     pre-filled from the survey, adjust it if needed and tap **Confirm**. The page then shows
+     **"Please collect your food — Total N"**; scanning again later shows the same prompt (handy at the food counter).
+     Admins can correct it in **Admin → Participants → Group**. The sheet stores family members (group total − 1).
    - **Food committee:** **Admin → Overview → Copy link for food committee** gives a live headcount page
      (`headcount.html`, refreshes every 15 s, numbers only). Staff who registered but didn't confirm are counted with
      their survey number as an estimate; the page says how many are estimated.

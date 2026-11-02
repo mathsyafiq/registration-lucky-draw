@@ -149,7 +149,7 @@
       <div class="muted" style="font-size:13px;margin-bottom:10px" id="partCount"></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Staff ID</th><th>Name</th><th>Department</th><th>Status</th><th>Time</th><th>Family</th><th></th></tr></thead>
+          <thead><tr><th>Staff ID</th><th>Name</th><th>Department</th><th>Status</th><th>Time</th><th title="People in the group including the staff member: confirmed / survey">Group (food)</th><th></th></tr></thead>
           <tbody id="partBody"></tbody>
         </table>
       </div>
@@ -237,6 +237,7 @@
         <label><input type="radio" name="importMode" value="append"> Add to the existing list</label>
         <label><input type="radio" name="importMode" value="family"> Update family numbers only (survey)</label>
       </div>
+      <label class="check"><input type="checkbox" id="surveyInclSelf"> The survey number <b>includes the staff member</b> (e.g. "total people attending"). Untick if it counts family members only.</label>
       <button class="btn gold" id="importBtn" type="button" disabled>Upload list</button>
     </div>
 
@@ -427,7 +428,7 @@ function renderParticipants() {
       '<td class="muted" style="font-size:12px;white-space:nowrap">' + fmtTime(p.registeredAt) + (p.method === 'Manual' ? ' · manual' : p.method === 'Walk-in' ? ' · <span class="pill gold">Walk-in</span>' : '') + '</td>' +
       '<td style="white-space:nowrap">' + familyCell(p) + '</td>' +
       '<td style="text-align:right">' + (p.registered
-        ? '<button class="btn ghost small" data-act="family" data-id="' + App.esc(p.staffId) + '">Family</button> ' +
+        ? '<button class="btn ghost small" data-act="family" data-id="' + App.esc(p.staffId) + '">Group</button> ' +
           '<button class="btn ghost small" data-act="unregister" data-id="' + App.esc(p.staffId) + '">Undo</button>'
         : '<button class="btn small" data-act="manualRegister" data-id="' + App.esc(p.staffId) + '">Register</button>') +
       '</td></tr>';
@@ -435,9 +436,10 @@ function renderParticipants() {
 }
 
 // Present (confirmed at check-in) and the survey number
+// Group total including the staff member (the sheet stores family only)
 function familyCell(p) {
-  var out = p.familyPresent != null ? '<b>' + p.familyPresent + '</b>' : '<span class="muted">–</span>';
-  if (p.familyExpected != null) out += ' <span class="muted" style="font-size:12px">/ survey ' + p.familyExpected + '</span>';
+  var out = p.familyPresent != null ? '<b>' + (p.familyPresent + 1) + '</b>' : '<span class="muted">–</span>';
+  if (p.familyExpected != null) out += ' <span class="muted" style="font-size:12px">/ survey ' + (p.familyExpected + 1) + '</span>';
   return out;
 }
 
@@ -462,16 +464,16 @@ document.getElementById('partBody').addEventListener('click', function (e) {
 
 function editFamily(btn, id) {
   var p = state.participants.find(function (x) { return x.staffId === id; });
-  var cur = p.familyPresent != null ? p.familyPresent : (p.familyExpected != null ? p.familyExpected : 0);
-  var v = prompt('Family members with ' + id + ' (' + p.name + '), not counting the staff member:', cur);
+  var cur = (p.familyPresent != null ? p.familyPresent : (p.familyExpected != null ? p.familyExpected : 0)) + 1;
+  var v = prompt('People in the group of ' + id + ' (' + p.name + '), including the staff member:', cur);
   if (v === null) return;
-  var n = Number(v);
-  if (!(Math.floor(n) === n && n >= 0 && n <= 50)) { App.toast('Enter a number between 0 and 50.', 'error'); return; }
-  withButton(btn, call('setFamily', { staffId: id, count: n })).then(function (res) {
+  var total = Number(v);
+  if (!(Math.floor(total) === total && total >= 1 && total <= 51)) { App.toast('Enter a number between 1 and 51.', 'error'); return; }
+  withButton(btn, call('setFamily', { staffId: id, count: total - 1 })).then(function (res) {
     if (!res.success) { App.toast(res.message, 'error'); return; }
-    p.familyPresent = n;
+    p.familyPresent = total - 1;
     renderParticipants();
-    App.toast('Family for ' + id + ' set to ' + n + '.', 'ok');
+    App.toast('Group for ' + id + ' set to ' + total + ' (food total).', 'ok');
   });
 }
 
@@ -479,10 +481,11 @@ document.getElementById('search').addEventListener('input', renderParticipants);
 document.getElementById('filter').addEventListener('change', renderParticipants);
 document.getElementById('reloadParts').addEventListener('click', loadParticipants);
 document.getElementById('exportParts').addEventListener('click', function () {
-  var rows = [['Staff ID', 'Name', 'Department', 'Status', 'Registered At', 'Method', 'Family (Survey)', 'Family (Present)']].concat(
+  var rows = [['Staff ID', 'Name', 'Department', 'Status', 'Registered At', 'Method', 'Family (Survey)', 'Family (Present)', 'Food total (incl. staff)']].concat(
     (state.participants || []).map(function (p) {
       return [p.staffId, p.name, p.department, p.registered ? 'Registered' : '', fmtTime(p.registeredAt), p.method,
-        p.familyExpected != null ? p.familyExpected : '', p.familyPresent != null ? p.familyPresent : ''];
+        p.familyExpected != null ? p.familyExpected : '', p.familyPresent != null ? p.familyPresent : '',
+        p.familyPresent != null ? p.familyPresent + 1 : ''];
     }));
   downloadCsv(rows, fileBase() + ' - attendance.csv');
 });
@@ -722,7 +725,14 @@ document.getElementById('importBtn').addEventListener('click', function () {
       ? 'Update the survey family numbers for ' + n + ' Staff IDs? Names and attendance are not changed.'
       : 'Add ' + n + ' people to the existing list? Staff IDs already on the list are skipped.';
   if (!confirm(msg)) return;
-  withButton(this, call('importParticipants', { rows: state.importRows, mode: mode })).then(function (res) {
+  // The sheet stores family members only, so a "total incl. staff" survey number is reduced by 1
+  var inclSelf = document.getElementById('surveyInclSelf').checked;
+  var rows = state.importRows.map(function (r) {
+    var m = String(r[3]).match(/\d+/);
+    var fam = m ? Number(m[0]) - (inclSelf ? 1 : 0) : '';
+    return [r[0], r[1], r[2], fam === '' ? '' : Math.max(0, fam)];
+  });
+  withButton(this, call('importParticipants', { rows: rows, mode: mode })).then(function (res) {
     if (!res.success) { App.toast(res.message, 'error'); return; }
     if (mode === 'family') {
       App.toast('Family numbers updated for ' + res.updated + ' staff.' +
