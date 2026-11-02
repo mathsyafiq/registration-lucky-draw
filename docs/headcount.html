@@ -73,9 +73,9 @@
       document.getElementById('bar').style.width = pct + '%';
       document.getElementById('pct').textContent = pct + '% of expected';
       document.getElementById('expLbl').textContent = 'Expected ' + h.paxExpected;
-      document.getElementById('note').textContent = h.unconfirmed
+      document.getElementById('note').textContent = !h.unconfirmed ? '' : h.familyEstimated
         ? h.familyEstimated + ' family members are estimated from the survey (' + h.unconfirmed + ' staff have not confirmed yet).'
-        : '';
+        : h.unconfirmed + ' staff have not confirmed their family number yet.';
       document.getElementById('foot').textContent = 'Updated ' + h.updated + ' · refreshes every 15 seconds';
     }).catch(function () {
       document.getElementById('foot').textContent = 'Connection problem, retrying…';

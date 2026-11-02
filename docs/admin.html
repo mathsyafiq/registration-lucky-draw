@@ -369,9 +369,9 @@ function renderHeadcount(h) {
   document.getElementById('hcPax').textContent = h.paxPresent;
   document.getElementById('hcStaff').textContent = h.staffPresent;
   document.getElementById('hcFam').textContent = h.familyPresent;
-  document.getElementById('hcFamSub').textContent = h.unconfirmed
+  document.getElementById('hcFamSub').textContent = !h.unconfirmed ? 'all confirmed at check-in' : h.familyEstimated
     ? h.familyConfirmed + ' confirmed · ' + h.familyEstimated + ' estimated from survey (' + h.unconfirmed + ' staff not confirmed)'
-    : 'all confirmed at check-in';
+    : h.unconfirmed + ' staff have not confirmed their family number';
   document.getElementById('hcExp').textContent = h.paxExpected;
   document.getElementById('hcExpSub').textContent = h.staffExpected + ' staff + ' + h.familyExpected + ' family · ' +
     h.surveyed + ' survey answers';
